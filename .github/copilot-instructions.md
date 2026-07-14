@@ -16,7 +16,7 @@ Core MCU
 
 Display
 
-    TWO ST7789V SPI TFT displays, sharing , 320x240 pixels, landscape
+    ST7789V SPI TFT display, 320x240 pixels, landscape
 
     Connected via FSPI (shared with SD card)
 
