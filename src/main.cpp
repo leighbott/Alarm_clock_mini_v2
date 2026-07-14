@@ -2,6 +2,7 @@
 #include "lgfx_user.hpp"
 #include <lvgl.h>
 #include "input_manager.h"
+#include "rtc_manager.h"
 
 static LGFX display;
 
@@ -38,11 +39,11 @@ void setup() {
     lv_init();
     lv_tick_set_cb(lv_tick_cb);
 
-    lv_buf1 = (uint8_t *)ps_malloc(LV_BUF_BYTES);
-    lv_buf2 = (uint8_t *)ps_malloc(LV_BUF_BYTES);
+    lv_buf1 = (uint8_t *)heap_caps_malloc(LV_BUF_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    lv_buf2 = (uint8_t *)heap_caps_malloc(LV_BUF_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!lv_buf1 || !lv_buf2) {
         Serial.println("WARN: PSRAM alloc failed, falling back to heap");
-        free(lv_buf1); free(lv_buf2);
+        heap_caps_free(lv_buf1); heap_caps_free(lv_buf2);
         lv_buf1 = (uint8_t *)malloc(LV_BUF_BYTES);
         lv_buf2 = (uint8_t *)malloc(LV_BUF_BYTES);
     }
@@ -57,6 +58,9 @@ void setup() {
     lv_display_set_flush_cb(lv_disp, lv_flush_cb);
     lv_display_set_buffers(lv_disp, lv_buf1, lv_buf2, LV_BUF_BYTES,
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+    // ── RTC ───────────────────────────────────────────────────────────────────
+    rtc_manager_init();
 
     // ── Input ─────────────────────────────────────────────────────────────────
     input_manager_init();
@@ -73,14 +77,19 @@ void loop() {
     input_manager_update();
     lv_task_handler();
 
-    // ── Stage 4 diagnostic — remove after verification ────────────────────────
-    static int32_t last1 = 0, last2 = 0;
-    int32_t c1 = input_manager_get_count(ENC1);
-    int32_t c2 = input_manager_get_count(ENC2);
-    if (c1 != last1) { Serial.printf("ENC1: %ld\n", c1); last1 = c1; }
-    if (c2 != last2) { Serial.printf("ENC2: %ld\n", c2); last2 = c2; }
-    if (input_manager_button_pressed(ENC1)) Serial.println("BTN1 pressed");
-    if (input_manager_button_pressed(ENC2)) Serial.println("BTN2 pressed");
+    // ── Stage 5 diagnostic — remove after verification ────────────────────────
+    static uint32_t last_print = 0;
+    if (millis() - last_print >= 1000) {
+        last_print = millis();
+        if (rtc_manager_is_ok()) {
+            DateTime now = rtc_manager_get_time();
+            Serial.printf("RTC: %04d-%02d-%02d %02d:%02d:%02d\n",
+                now.year(), now.month(), now.day(),
+                now.hour(), now.minute(), now.second());
+        } else {
+            Serial.println("RTC ERROR");
+        }
+    }
 
     delay(5);
 }
