@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "lgfx_user.hpp"
 #include <lvgl.h>
+#include "input_manager.h"
 
 static LGFX display;
 
@@ -57,6 +58,9 @@ void setup() {
     lv_display_set_buffers(lv_disp, lv_buf1, lv_buf2, LV_BUF_BYTES,
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
 
+    // ── Input ─────────────────────────────────────────────────────────────────
+    input_manager_init();
+
     // ── Test label ────────────────────────────────────────────────────────────
     lv_obj_t *label = lv_label_create(lv_screen_active());
     lv_label_set_text(label, "Hello LVGL");
@@ -66,6 +70,17 @@ void setup() {
 }
 
 void loop() {
+    input_manager_update();
     lv_task_handler();
+
+    // ── Stage 4 diagnostic — remove after verification ────────────────────────
+    static int32_t last1 = 0, last2 = 0;
+    int32_t c1 = input_manager_get_count(ENC1);
+    int32_t c2 = input_manager_get_count(ENC2);
+    if (c1 != last1) { Serial.printf("ENC1: %ld\n", c1); last1 = c1; }
+    if (c2 != last2) { Serial.printf("ENC2: %ld\n", c2); last2 = c2; }
+    if (input_manager_button_pressed(ENC1)) Serial.println("BTN1 pressed");
+    if (input_manager_button_pressed(ENC2)) Serial.println("BTN2 pressed");
+
     delay(5);
 }

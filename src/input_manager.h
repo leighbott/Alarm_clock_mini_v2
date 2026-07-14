@@ -18,3 +18,6 @@ bool input_manager_button_pressed(EncoderID id);
 
 // Returns true while the button is held
 bool input_manager_button_held(EncoderID id);
+
+// Returns the raw LVGL indev handle (used to assign to groups in menus)
+lv_indev_t *input_manager_get_indev(EncoderID id);
