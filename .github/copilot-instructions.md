@@ -16,39 +16,20 @@ Core MCU
 
 Display
 
-    ST7789V SPI TFT, 320x240 pixels, landscape
+    TWO ST7789V SPI TFT displays, sharing , 320x240 pixels, landscape
 
     Connected via FSPI (shared with SD card)
 
-    Pin assignments:
-
-        MOSI = IO10
-
-        SCK  = IO11
-
-        CS   = IO12
-
-        DC   = IO13
-
-        RST  = IO14
-
-        BL   = IO9  (PWM backlight via LEDC)
 
 Input
 
-    Two rotary encoders (hardware PCNT quadrature, half-quad mode via ESP32Encoder)
-
-        Encoder 1: CLK=IO1, DT=IO2
-        Button 1: (for encoder 1) IO43
-
-        Encoder 2: CLK=IO40, DT=IO39
-        Button 2: (for encoder 2) IO44
+    Two rotary encoders each with a button(hardware PCNT quadrature, half-quad mode via ESP32Encoder)
 
     No touchscreen.
 
 Sensors
 
-    LDR=IO15 (light-dependent resistor) with series resistor
+    LDR (light-dependent resistor) with series resistor
     
         Used for auto‑brightness
 
@@ -70,7 +51,7 @@ Sensors
         I²C address: 0x68
         Primary time source
 
-    All I2C sensors on Wire1: SDA=IO47, SCL=IO48
+    All I2C sensors on Wire1
 
 
 
@@ -84,23 +65,23 @@ LED Channels
 
     Channels:
 
-        Front LED — IO16
+        Front LED
 
-        Back LED — IO17
-
+        Back LED
 Audio
 
     MAX98357A I²S amplifier
 
-        BCLK=IO41, LRCK=IO42, DOUT=IO21
-
     MicroSD card for MP3 alarm sounds
 
-        Shared FSPI bus (MOSI=IO10, SCK=IO11, MISO=IO18, CS=IO38)
+        Shared FSPI bus
 
     I²S audio playback via ESP32-audioI2S (schreibfaul1)
 
     If no MP3 is available → no sound, but alarm still runs normally
+
+Pin definitions
+    Defined in pin_definitions.csv
 
 3. Software Architecture
 Core Modules
@@ -321,8 +302,6 @@ Auto‑Brightness
 
     Minimum brightness enforced
 
-    Backlight PWM on IO9 via LEDC
-
 Boost
 
     Any user interaction → boost screen brightness to user set boost brightness value for 2 seconds
@@ -412,8 +391,7 @@ Input State
 
 Hardware
 Amplifier: MAX98357A I²S amp
-Pins: BCLK=IO41, LRCK=IO42, DOUT=IO21
-SD card (source of audio files): Shared FSPI bus with the display — MOSI=IO10, SCK=IO11, MISO=IO18, CS=IO38
+SD card (source of audio files): Shared FSPI bus with the display
 Library
 Use schreibfaul1/ESP32-audioI2S, pinned to tag 3.0.8:
 https://github.com/schreibfaul1/ESP32-audioI2S.git#3.0.8

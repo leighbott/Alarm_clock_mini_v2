@@ -1,0 +1,49 @@
+Left Side,,
+Pin Label,Function,Notes
+3V,3.3V Power,
+3V,3.3V Power,
+RST,Board Reset,
+4,FREE,
+5,Display 2 — BLK,Backlight PWM
+6,Display 2 — RES,Reset
+7,Display 2 — DC,Data/Command
+15,LDR,
+16,LED Strip 1 — PWM,MOSFET gate
+17,LED Strip 2 — PWM,MOSFET gate
+18,SD CARD MISO,
+8,Display 2 — CS,Chip select
+3,FREE,Strapping pin
+46,FREE,Strapping pin
+9,Display 1 — BLK,Backlight PWM
+10,SDA / MOSI,Both Displays
+11,SCL / SCK / CLK,"Both displays, SD card"
+12,Display 1 — CS,Chip select
+13,Display 1 — DC,Data/Command
+14,Display 1 — RES,Reset
+5V,5V Power,
+G,GND,
+,,
+Right Side,,
+Pin Label,Function,Notes
+G,GND,
+TX (IO43),Encoder Button 1,"Input, internal pullup, active LOW"
+RX (IO44),Encoder Button 2,"Input, internal pullup, active LOW"
+1,Encoder 1 — A,
+2,Encoder 1 — B,
+42,I2S WS / LRCLK,
+41,I2S BCLK,
+40,Encoder 2 — A,
+39,Encoder 2 — B,
+38,SD CARD CS,
+37,PSRAM — DO NOT USE,N16R8 internal
+36,PSRAM — DO NOT USE,N16R8 internal
+35,PSRAM — DO NOT USE,N16R8 internal
+0,FREE,"Strapping pin,  add 10k pullup to 3.3V"
+45,FREE,
+48,I2C SCL,
+47,I2C SDA,
+21,I2S DOUT,Data to DAC/amp
+20,FREE but avoid,USB CDC for serial debug
+19,FREE but avoid,USB CDC for serial debug
+G,GND,
+G,GND,
