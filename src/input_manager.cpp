@@ -73,7 +73,8 @@ static void update_button(ButtonState &b) {
 static void lv_enc_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
     LvEncData *ed = (LvEncData *)lv_indev_get_user_data(indev);
 
-    int32_t current = (int32_t)ed->enc->getCount();
+    // Divide by 2: half-quad mode gives 2 counts per physical detent
+    int32_t current = (int32_t)ed->enc->getCount() / 2;
     data->enc_diff  = (int16_t)(current - *ed->last_count);
     *ed->last_count = current;
 
@@ -84,7 +85,7 @@ static void lv_enc_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
 void input_manager_init() {
     // Encoders — half-quad mode via PCNT
     ESP32Encoder::useInternalWeakPullResistors = puType::up;
-    enc1.attachHalfQuad(PIN_ENC1_A, PIN_ENC1_B);
+    enc1.attachHalfQuad(PIN_ENC1_B, PIN_ENC1_A);  // A/B swapped to correct direction
     enc2.attachHalfQuad(PIN_ENC2_A, PIN_ENC2_B);
     enc1.setCount(0);
     enc2.setCount(0);
@@ -111,8 +112,9 @@ void input_manager_update() {
 }
 
 int32_t input_manager_get_count(EncoderID id) {
-    return (id == ENC1) ? (int32_t)enc1.getCount()
-                        : (int32_t)enc2.getCount();
+    // Divide by 2: half-quad mode gives 2 counts per physical detent
+    return (id == ENC1) ? (int32_t)enc1.getCount() / 2
+                        : (int32_t)enc2.getCount() / 2;
 }
 
 bool input_manager_button_pressed(EncoderID id) {
