@@ -4,6 +4,8 @@
 #include "input_manager.h"
 #include "rtc_manager.h"
 #include "sensor_manager.h"
+#include "storage_manager.h"
+#include <Preferences.h>
 
 static LGFX display;
 
@@ -59,6 +61,19 @@ void setup() {
     lv_display_set_flush_cb(lv_disp, lv_flush_cb);
     lv_display_set_buffers(lv_disp, lv_buf1, lv_buf2, LV_BUF_BYTES,
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+    // ── Storage (must be first — loads settings before anything else uses them) ────
+    storage_manager_init();
+
+    // ── Stage 7 diagnostic: boot counter written to NVS ────────────────────
+    {
+        Preferences test_prefs;
+        test_prefs.begin("nvs_test", false);
+        uint32_t boots = test_prefs.getUInt("boots", 0) + 1;
+        test_prefs.putUInt("boots", boots);
+        test_prefs.end();
+        Serial.printf("NVS test: boot count = %lu\n", boots);
+    }
 
     // ── RTC ───────────────────────────────────────────────────────────────────
     rtc_manager_init();
