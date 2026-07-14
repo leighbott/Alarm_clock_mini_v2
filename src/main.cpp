@@ -3,6 +3,7 @@
 #include <lvgl.h>
 #include "input_manager.h"
 #include "rtc_manager.h"
+#include "sensor_manager.h"
 
 static LGFX display;
 
@@ -61,6 +62,7 @@ void setup() {
 
     // ── RTC ───────────────────────────────────────────────────────────────────
     rtc_manager_init();
+    sensor_manager_init();
 
     // ── Input ─────────────────────────────────────────────────────────────────
     input_manager_init();
@@ -77,10 +79,12 @@ void loop() {
     input_manager_update();
     lv_task_handler();
 
-    // ── Stage 5 diagnostic — remove after verification ────────────────────────
+    // ── Stage 5+6 diagnostic — remove after verification ────────────────────
     static uint32_t last_print = 0;
     if (millis() - last_print >= 1000) {
         last_print = millis();
+        sensor_manager_update();
+        const SensorData &s = sensor_manager_get();
         if (rtc_manager_is_ok()) {
             DateTime now = rtc_manager_get_time();
             Serial.printf("RTC: %04d-%02d-%02d %02d:%02d:%02d\n",
@@ -89,6 +93,12 @@ void loop() {
         } else {
             Serial.println("RTC ERROR");
         }
+        if (!isnan(s.temperature)) Serial.printf("Temp:  %.1f C\n", s.temperature);
+        else                        Serial.println("Temp:  --");
+        if (!isnan(s.humidity))    Serial.printf("Hum:   %.1f %%\n", s.humidity);
+        else                        Serial.println("Hum:   --");
+        if (!isnan(s.pressure))    Serial.printf("Press: %.1f hPa\n", s.pressure);
+        else                        Serial.println("Press: --");
     }
 
     delay(5);
