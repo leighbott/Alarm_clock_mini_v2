@@ -5,6 +5,7 @@
 #include "rtc_manager.h"
 #include "sensor_manager.h"
 #include "storage_manager.h"
+#include "led_manager.h"
 #include <Preferences.h>
 
 static LGFX display;
@@ -79,6 +80,13 @@ void setup() {
     rtc_manager_init();
     sensor_manager_init();
 
+    // ── LEDs ──────────────────────────────────────────────────────────────────
+    {
+        AppSettings &s = storage_manager_get();
+        led_manager_init(s.led_front_brightness, s.led_back_brightness,
+                         s.led_front_enabled,    s.led_back_enabled);
+    }
+
     // ── Input ─────────────────────────────────────────────────────────────────
     input_manager_init();
 
@@ -93,6 +101,36 @@ void setup() {
 void loop() {
     input_manager_update();
     lv_task_handler();
+
+    // ── Stage 8: encoder-driven LED control ───────────────────────────────
+    {
+        static int32_t last_e1 = 0, last_e2 = 0;
+        int32_t e1 = input_manager_get_count(ENC1);
+        int32_t e2 = input_manager_get_count(ENC2);
+
+        if (e1 != last_e1) {
+            int32_t br = (int32_t)led_manager_get_front() + (e1 - last_e1) * 5;
+            br = br < 0 ? 0 : (br > 255 ? 255 : br);
+            led_manager_set_front((uint8_t)br);
+            Serial.printf("Front LED: %d\n", br);
+            last_e1 = e1;
+        }
+        if (e2 != last_e2) {
+            int32_t br = (int32_t)led_manager_get_back() + (e2 - last_e2) * 5;
+            br = br < 0 ? 0 : (br > 255 ? 255 : br);
+            led_manager_set_back((uint8_t)br);
+            Serial.printf("Back LED: %d\n", br);
+            last_e2 = e2;
+        }
+        if (input_manager_button_pressed(ENC1)) {
+            led_manager_toggle_front();
+            Serial.printf("Front LED toggled: %s\n", led_manager_is_front_on() ? "ON" : "OFF");
+        }
+        if (input_manager_button_pressed(ENC2)) {
+            led_manager_toggle_back();
+            Serial.printf("Back LED toggled: %s\n", led_manager_is_back_on() ? "ON" : "OFF");
+        }
+    }
 
     // ── Stage 5+6 diagnostic — remove after verification ────────────────────
     static uint32_t last_print = 0;
