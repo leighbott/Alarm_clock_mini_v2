@@ -14,6 +14,7 @@
 
 // ── Widget handles ────────────────────────────────────────────────────────────
 static lv_obj_t *lbl_time     = nullptr;   // "12:34"
+static lv_obj_t *lbl_ampm     = nullptr;   // "AM" / "PM"
 static lv_obj_t *lbl_secs     = nullptr;   // "56"
 static lv_obj_t *lbl_date     = nullptr;   // "Monday, 14th Jul"
 static lv_obj_t *lbl_alarm    = nullptr;   // "Alarm  07:00" / "Alarm  OFF"
@@ -63,12 +64,19 @@ void ui_main_screen_init() {
     lv_obj_set_style_text_color(lbl_time, COL_PRIMARY, 0);
     lv_obj_align(lbl_time, LV_ALIGN_TOP_MID, -20, 8);
 
-    // ── Seconds (small, to the right of time) ────────────────────────────────
+    // ── AM/PM (above seconds, to the right of time) ────────────────────────
+    lbl_ampm = lv_label_create(scr);
+    lv_label_set_text(lbl_ampm, "AM");
+    lv_obj_set_style_text_font(lbl_ampm, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(lbl_ampm, COL_PRIMARY, 0);
+    lv_obj_align_to(lbl_ampm, lbl_time, LV_ALIGN_OUT_RIGHT_TOP, 6, 4);
+
+    // ── Seconds (below AM/PM) ────────────────────────────────────────────
     lbl_secs = lv_label_create(scr);
     lv_label_set_text(lbl_secs, "00");
     lv_obj_set_style_text_font(lbl_secs, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(lbl_secs, COL_DIM, 0);
-    lv_obj_align_to(lbl_secs, lbl_time, LV_ALIGN_OUT_RIGHT_BOTTOM, 4, -2);
+    lv_obj_align_to(lbl_secs, lbl_ampm, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
 
     // ── Date ─────────────────────────────────────────────────────────────────
     lbl_date = lv_label_create(scr);
@@ -134,12 +142,18 @@ void ui_main_screen_update() {
     if (rtc_manager_is_ok()) {
         DateTime now = rtc_manager_get_time();
 
+        // 12-hour conversion
+        uint8_t h12 = now.hour() % 12;
+        if (h12 == 0) h12 = 12;
+        bool is_pm = now.hour() >= 12;
+
         if (colon_visible) {
-            snprintf(buf, sizeof(buf), "%02d:%02d", now.hour(), now.minute());
+            snprintf(buf, sizeof(buf), "%d:%02d", h12, now.minute());
         } else {
-            snprintf(buf, sizeof(buf), "%02d %02d", now.hour(), now.minute());
+            snprintf(buf, sizeof(buf), "%d %02d", h12, now.minute());
         }
         lv_label_set_text(lbl_time, buf);
+        lv_label_set_text(lbl_ampm, is_pm ? "PM" : "AM");
 
         snprintf(buf, sizeof(buf), "%02d", now.second());
         lv_label_set_text(lbl_secs, buf);
