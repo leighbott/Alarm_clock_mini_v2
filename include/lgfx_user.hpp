@@ -23,7 +23,7 @@ public:
             cfg.dma_channel = SPI_DMA_CH_AUTO;
             cfg.pin_sclk   = PIN_TFT_SCK;
             cfg.pin_mosi   = PIN_TFT_MOSI;
-            cfg.pin_miso   = -1;          // unused by display (SD uses it)
+            cfg.pin_miso   = PIN_SD_MISO; // shared with SD card — must be set here
             cfg.pin_dc     = PIN_TFT_DC;
             _bus_instance.config(cfg);
             _panel_instance.setBus(&_bus_instance);

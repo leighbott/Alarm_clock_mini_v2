@@ -6,6 +6,7 @@
 #include "sensor_manager.h"
 #include "storage_manager.h"
 #include "led_manager.h"
+#include "audio_manager.h"
 #include <Preferences.h>
 
 static LGFX display;
@@ -33,6 +34,26 @@ static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
 void setup() {
     Serial.begin(115200);
     delay(500);
+
+    // ── Storage (must be first — loads settings before anything else uses them) ────
+    storage_manager_init();
+
+    // ── Stage 7 diagnostic: boot counter written to NVS ────────────────────
+    {
+        Preferences test_prefs;
+        test_prefs.begin("nvs_test", false);
+        uint32_t boots = test_prefs.getUInt("boots", 0) + 1;
+        test_prefs.putUInt("boots", boots);
+        test_prefs.end();
+        Serial.printf("NVS test: boot count = %lu\n", boots);
+    }
+
+    // ── Audio + SD (MUST run before display.init — SPI.begin() must own the  ──
+    // ── bus first; LovyanGFX then takes it over with bus_shared=true)        ──
+    {
+        audio_manager_set_volume(storage_manager_get().alarm_volume);
+        audio_manager_init();
+    }
 
     // ── Display ───────────────────────────────────────────────────────────────
     display.init();
@@ -63,19 +84,6 @@ void setup() {
     lv_display_set_buffers(lv_disp, lv_buf1, lv_buf2, LV_BUF_BYTES,
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    // ── Storage (must be first — loads settings before anything else uses them) ────
-    storage_manager_init();
-
-    // ── Stage 7 diagnostic: boot counter written to NVS ────────────────────
-    {
-        Preferences test_prefs;
-        test_prefs.begin("nvs_test", false);
-        uint32_t boots = test_prefs.getUInt("boots", 0) + 1;
-        test_prefs.putUInt("boots", boots);
-        test_prefs.end();
-        Serial.printf("NVS test: boot count = %lu\n", boots);
-    }
-
     // ── RTC ───────────────────────────────────────────────────────────────────
     rtc_manager_init();
     sensor_manager_init();
@@ -100,9 +108,10 @@ void setup() {
 
 void loop() {
     input_manager_update();
+    audio_manager_loop();
     lv_task_handler();
 
-    // ── Stage 8: encoder-driven LED control ───────────────────────────────
+    // ── Stage 8: encoder rotation controls LED brightness ─────────────────────
     {
         static int32_t last_e1 = 0, last_e2 = 0;
         int32_t e1 = input_manager_get_count(ENC1);
@@ -112,6 +121,7 @@ void loop() {
             int32_t br = (int32_t)led_manager_get_front() + (e1 - last_e1) * 5;
             br = br < 0 ? 0 : (br > 255 ? 255 : br);
             led_manager_set_front((uint8_t)br);
+            if (!led_manager_is_front_on()) led_manager_toggle_front();
             Serial.printf("Front LED: %d\n", br);
             last_e1 = e1;
         }
@@ -119,16 +129,21 @@ void loop() {
             int32_t br = (int32_t)led_manager_get_back() + (e2 - last_e2) * 5;
             br = br < 0 ? 0 : (br > 255 ? 255 : br);
             led_manager_set_back((uint8_t)br);
+            if (!led_manager_is_back_on()) led_manager_toggle_back();
             Serial.printf("Back LED: %d\n", br);
             last_e2 = e2;
         }
+    }
+
+    // ── Stage 9: button 1 = play test MP3, button 2 = stop ────────────────
+    {
         if (input_manager_button_pressed(ENC1)) {
-            led_manager_toggle_front();
-            Serial.printf("Front LED toggled: %s\n", led_manager_is_front_on() ? "ON" : "OFF");
+            audio_manager_set_volume(70);
+            audio_manager_play("/test.mp3");
         }
         if (input_manager_button_pressed(ENC2)) {
-            led_manager_toggle_back();
-            Serial.printf("Back LED toggled: %s\n", led_manager_is_back_on() ? "ON" : "OFF");
+            audio_manager_stop();
+            Serial.println("Audio: stopped");
         }
     }
 
