@@ -2,14 +2,14 @@
 #include <SPI.h>
 #include <lvgl.h>
 #include "pins_config.h"
-#include "input_manager.h"
-#include "rtc_manager.h"
-#include "sensor_manager.h"
-#include "storage_manager.h"
-#include "led_manager.h"
-#include "audio_manager.h"
+#include "manager_input.h"
+#include "manager_rtc.h"
+#include "manager_sensor.h"
+#include "manager_storage.h"
+#include "manager_led.h"
+#include "manager_audio.h"
 #include "ui_main_screen.h"
-#include "settings_menu.h"
+#include "ui_settings_menu.h"
 
 #define SPI_CLK_HZ  40000000UL
 #define TFT_BL_LEDC_CH 0

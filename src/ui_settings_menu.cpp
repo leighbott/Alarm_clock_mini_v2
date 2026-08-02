@@ -1,4 +1,5 @@
-#include "settings_menu.h"
+#include "ui_settings_menu.h"
+#include "ui_time_date.h"
 
 #include <lvgl.h>
 
@@ -190,6 +191,11 @@ static void route_to_main_settings() {
 
 static void route_to_child(uint8_t idx) {
     if (idx >= 4 || !g_children[idx].screen) return;
+
+    if (g_children[idx].state == UiNavState::SETTINGS_TIME_DATE) {
+        ui_time_date_on_enter();
+    }
+
     g_state = g_children[idx].state;
     lv_screen_load(g_children[idx].screen);
 }
@@ -201,7 +207,9 @@ void settings_menu_init(lv_obj_t *home_screen) {
     g_state = UiNavState::HOME;
 
     build_main_settings_screen();
-    for (uint8_t i = 0; i < 4; ++i) {
+    ui_time_date_init();
+    g_children[0].screen = ui_time_date_get_screen();
+    for (uint8_t i = 1; i < 4; ++i) {
         g_children[i].screen = build_child_screen(g_children[i].title);
     }
 }
@@ -253,7 +261,18 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
             return;
         }
 
-        case UiNavState::SETTINGS_TIME_DATE:
+        case UiNavState::SETTINGS_TIME_DATE: {
+            const UiTimeDateAction action = ui_time_date_handle_inputs(
+                enc1_delta,
+                enc2_delta,
+                enc1_pressed,
+                enc2_pressed);
+            if (action != UiTimeDateAction::NONE) {
+                route_to_main_settings();
+            }
+            return;
+        }
+
         case UiNavState::SETTINGS_ALARM:
         case UiNavState::SETTINGS_DISPLAY:
         case UiNavState::SETTINGS_OTHER:

@@ -1,7 +1,7 @@
 #include "ui_main_screen.h"
-#include "rtc_manager.h"
-#include "sensor_manager.h"
-#include "storage_manager.h"
+#include "manager_rtc.h"
+#include "manager_sensor.h"
+#include "manager_storage.h"
 #include <lvgl.h>
 #include <Arduino.h>
 #include <math.h>
