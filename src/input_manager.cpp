@@ -130,6 +130,12 @@ bool input_manager_button_held(EncoderID id) {
     return (id == ENC1) ? btn1.held : btn2.held;
 }
 
+uint32_t input_manager_button_hold_ms(EncoderID id) {
+    ButtonState &b = (id == ENC1) ? btn1 : btn2;
+    if (!b.held) return 0;
+    return (uint32_t)(millis() - b.press_time);
+}
+
 lv_indev_t *input_manager_get_indev(EncoderID id) {
     return (id == ENC1) ? lv_indev_enc1 : lv_indev_enc2;
 }

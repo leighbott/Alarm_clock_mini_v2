@@ -21,6 +21,7 @@ static lv_obj_t *lbl_alarm    = nullptr;   // "Alarm  07:00" / "Alarm  OFF"
 static lv_obj_t *lbl_until    = nullptr;   // "in 14h 26m"
 static lv_obj_t *lbl_temp     = nullptr;   // "23.4°C"
 static lv_obj_t *lbl_hum      = nullptr;   // "48%"
+static lv_obj_t *main_screen  = nullptr;
 
 static bool colon_visible = true;
 
@@ -54,6 +55,7 @@ static const char *month_name(uint8_t m) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 void ui_main_screen_init() {
     lv_obj_t *scr = lv_screen_active();
+    main_screen = scr;
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
@@ -209,4 +211,8 @@ void ui_main_screen_update() {
     else
         snprintf(buf, sizeof(buf), "--%%" );
     lv_label_set_text(lbl_hum, buf);
+}
+
+lv_obj_t *ui_main_screen_get_screen() {
+    return main_screen;
 }

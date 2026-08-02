@@ -9,6 +9,7 @@
 #include "led_manager.h"
 #include "audio_manager.h"
 #include "ui_main_screen.h"
+#include "settings_menu.h"
 
 #define SPI_CLK_HZ  40000000UL
 #define TFT_BL_LEDC_CH 0
@@ -174,6 +175,7 @@ void setup() {
 
     // 8. Main screen
     ui_main_screen_init();
+    settings_menu_init(ui_main_screen_get_screen());
     ui_main_screen_update();
 
     Serial.println("Boot OK");
@@ -183,8 +185,47 @@ void loop() {
     input_manager_update();
     audio_manager_loop();
 
+    static int32_t last_enc1 = 0;
+    static int32_t last_enc2 = 0;
+
+    const int32_t enc1_now = input_manager_get_count(ENC1);
+    const int32_t enc2_now = input_manager_get_count(ENC2);
+    const int32_t enc1_delta = enc1_now - last_enc1;
+    const int32_t enc2_delta = enc2_now - last_enc2;
+    last_enc1 = enc1_now;
+    last_enc2 = enc2_now;
+
+    static bool hold_open_latched = false;
+    const bool enc1_held = input_manager_button_held(ENC1);
+    const bool enc2_held = input_manager_button_held(ENC2);
+
+    if (settings_menu_is_home()) {
+        const bool hold_ready =
+            (enc1_held && input_manager_button_hold_ms(ENC1) >= 500) ||
+            (enc2_held && input_manager_button_hold_ms(ENC2) >= 500);
+
+        if (!hold_open_latched && hold_ready) {
+            settings_menu_open_main();
+            hold_open_latched = true;
+
+            // Prevent the press edge that started the hold from triggering menu actions.
+            (void)input_manager_button_pressed(ENC1);
+            (void)input_manager_button_pressed(ENC2);
+        }
+    } else {
+        settings_menu_handle_inputs(
+            enc1_delta,
+            enc2_delta,
+            input_manager_button_pressed(ENC1),
+            input_manager_button_pressed(ENC2));
+    }
+
+    if (hold_open_latched && !enc1_held && !enc2_held) {
+        hold_open_latched = false;
+    }
+
     static uint32_t last_sec = 0;
-    if (millis() - last_sec >= 1000) {
+    if (settings_menu_is_home() && (millis() - last_sec >= 1000)) {
         last_sec = millis();
         ui_main_screen_update();
     }
