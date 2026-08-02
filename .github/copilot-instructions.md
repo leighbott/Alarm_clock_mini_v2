@@ -16,7 +16,7 @@ Core MCU
 
 Display
 
-    ST7789V SPI TFT display, 320x240 pixels, landscape
+    NV3007 SPI TFT display, 428x142 pixels, landscape
 
     Connected via FSPI (shared with SD card)
 
@@ -143,7 +143,7 @@ Module Rules
 
     Initialize audio system (MAX98357A)
 
-    Initialize LVGL + display (ST7789 via FSPI)
+    Initialize LVGL + display (NV3007 via FSPI)
 
     Build main screen
 

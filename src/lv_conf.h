@@ -13,6 +13,10 @@
 #define LV_USE_STDLIB_STRING    LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF   LV_STDLIB_CLIB
 
+/* ── Display drivers ─────────────────────────────────────────────────────── */
+#define LV_USE_GENERIC_MIPI 1
+#define LV_USE_NV3007       1
+
 /* ── HAL ─────────────────────────────────────────────────────────────────── */
 #define LV_DEF_REFR_PERIOD  10    /* ms — display refresh interval */
 #define LV_DPI_DEF          130

@@ -5,7 +5,7 @@
 // Generated from pin_definitions.csv
 // =============================================================================
 
-// ── Display 1 (ST7789V, FSPI) ─────────────────────────────────────────────────
+// ── Display (NV3007, FSPI, 142×428 portrait / 428×142 landscape) ──────────────
 #define PIN_TFT_BLK     9    // Backlight PWM
 #define PIN_TFT_RES     14   // Reset
 #define PIN_TFT_DC      13   // Data/Command
