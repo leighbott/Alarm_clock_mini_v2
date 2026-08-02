@@ -1,0 +1,81 @@
+Deployment Phases and Stages:
+Phase 1 — Foundation
+Stage 1 — Project Scaffold
+Create directory structure (src/, include/, scripts/), fix platformio.ini, create scripts/patch_libs.py, include/pins_config.h from the CSV, and a minimal main.cpp that just boots and prints "Boot OK".
+Verification: Build succeeds; Serial prints "Boot OK"
+
+Stage 2 — Display Init
+Create include/lgfx_user.hpp (LovyanGFX config for ST7789V on Display 1 pins), init in main.cpp, fill screen with a solid colour.
+Verification: Display lights up with a solid colour
+
+Stage 3 — LVGL Baseline
+Create src/lv_conf.h, wire LVGL flush callback + tick to LovyanGFX, render a centred "Hello LVGL" label.
+Verification: Label renders correctly, no crash or flickering
+
+Phase 2 — Hardware Drivers
+Stage 4 — Input Manager
+src/input_manager — both encoders (PCNT, half-quad) + buttons (active LOW, internal pullup). Attach LVGL indev/encoder group.
+Verification: Rotating/pressing each encoder logs correct events to Serial
+
+Stage 5 — RTC Manager
+src/rtc_manager — Wire1 on SDA=47/SCL=48, DS3231 via RTClib, getCurrentTime(), prints time to Serial every second.
+Verification: Correct time prints to Serial
+
+Stage 6 — Sensor Manager
+src/sensor_manager — AHT20 (0x38) + BMP280 (0x76) on Wire1, read every 1s, fail gracefully with "--" sentinels.
+Verification: Real values print to Serial; disconnecting a sensor shows "--"
+
+Stage 7 — Storage Manager (NVS)
+src/storage_manager — all persistent settings, loadAll() / saveAll() + per-setting save helpers.
+Verification: Write a test value, power cycle, value survives
+
+Stage 8 — LED Manager
+src/led_manager — LEDC PWM for front (GPIO 16) and back (GPIO 17), setBrightness(), toggle functions.
+Verification: LEDs ramp up/down on command
+
+Stage 9 — Audio Manager
+src/audio_manager — SD on shared FSPI (after display init), ESP32-audioI2S, playFile(), setVolume() with 0–21 mapping, beep fallback.
+Verification: MP3 plays; missing file falls back to beep WAV
+
+Phase 3 — UI Screens
+Stage 10 — Main Screen UI
+src/ui_main_screen — LVGL layout: time (flashing colon), date, next alarm, temp/humidity. Updates every second.
+Verification: All fields display and update correctly
+
+Stage 11 — Brightness Manager
+src/brightness_manager — LDR ADC on GPIO 15, smoothed, mapped to display backlight. Boost 2s on any input.
+Verification: Cover LDR → screen dims; touch encoder → screen boosts
+
+Stage 12 — Settings Menu Shell
+src/ui_main_settings_menu — icon grid for Time & Date / Alarm / Display / Other. Standard header (Cancel left, Accept right, title centre). Encoder navigation.
+Verification: Can navigate icons and enter/exit the shell
+
+Stage 13 — Time & Date Menu
+src/ui_time_date_menu — infinite scroll wheels (Hour, Minute, Day, Month, Year). Accept writes to RTC.
+Verification: Change time, accept, RTC updated
+
+Stage 14 — Display Settings Menu
+Part of src/ui_other_settings_menu — min brightness toggle, auto-brightness on/off, boost value. Saves to NVS.
+Verification: Toggle auto-brightness, behaviour changes on main screen
+
+Phase 4 — Alarm System
+Stage 15 — Alarm Manager (Core Logic)
+src/alarm_manager — full state machine: Idle → Sunrise → AlarmActive → Snoozed → Dismissing → Dismissed. Trigger check every second. Once/weekday repeat.
+Verification: Set alarm to now, confirm all state transitions fire correctly
+
+Stage 16 — Sunrise Manager
+src/sunrise_manager — lead-in start time, exponential LED ramp. Front LED suspended on button hold, restored if action incomplete.
+Verification: LEDs ramp exponentially in the configured window
+
+Stage 17 — Alarm Settings Menu
+src/ui_alarm_menu + src/ui_sdcard_menu — full alarm config: on/off, time, MP3 from SD, volume, sunrise brightness, ramp durations, snooze, hold-to-dismiss, repeat.
+Verification: Save alarm settings, alarm fires with correct MP3 and behaviour
+
+Stage 18 — Alarm Quick Modify
+src/ui_alarm_quick_modify — quick alarm on/off + time nudge from main screen.
+Verification: Quick-modify persists; main screen next-alarm time updates
+
+Phase 5 — Integration
+Stage 19 — Full Integration & Polish
+Wire everything together: encoder LED control on main screen, input → brightness boost, alarm dismissal animation (shrinking circle), snooze LED/audio restore, all error states (RTC fail, sensor fail, SD missing).
+Verification: Full end-to-end alarm cycle: sunrise → alarm → snooze → dismiss

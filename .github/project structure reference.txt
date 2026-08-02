@@ -1,0 +1,280 @@
+2. Hardware Components
+Core MCU
+    ESP32‑S3 N16R8 dev board, 16 MB Flash, 8 MB OPI PSRAM
+Display
+    NV3007 SPI TFT display, 428x142 pixels, landscape
+    Connected via FSPI (shared with SD card)
+Sensors
+    LDR (light-dependent resistor) with series resistor
+    I2C AHT20 temperature/humidity sensor: I²C address: 0x38
+    I2C DS3231 RTC module: I²C address: 0x68
+    All I2C sensors on Wire1
+Audio
+    MAX98357A I²S amplifier
+        Shared FSPI bus
+    I²S audio playback via ESP32-audioI2S (schreibfaul1)
+Pin definitions
+    Defined in pin_definitions.csv
+3. Software Architecture
+Core Modules
+    ui_main_screen
+    ui_main_settings_menu
+    ui_time_date_menu
+    ui_alarm_menu
+        ui_sdcard_menu (mp3 selection within alarm menu)
+    ui_alarm_quick_modify
+    ui_other_settings_menu
+    alarm_manager
+    sunrise_manager
+    brightness_manager
+    input_manager (encoders + buttons)
+    sensor_manager
+    storage_manager (NVS)
+    rtc_manager
+    audio_manager
+    led_manager
+    pins_config.h (central GPIO pin definitions)
+4. Boot Sequence
+    Initialize NVS
+    Load all settings
+    Initialize RTC (DS3231 on Wire1)
+    Initialize sensors (AHT20, BMP280 — all on Wire1)
+    Initialize LED PWM channels
+    Initialize audio system (MAX98357A)
+    Initialize LVGL + display (NV3007 via FSPI)
+    Build main screen
+    Start periodic timers (1‑second tasks)
+5. Main Screen Layout
+    Time: HH:mm ss
+
+        Colon flashes every second
+
+    Date: Weekday, DD(ordinal) MMM
+
+    Next alarm time (or “OFF”)
+
+    Time until next alarm
+
+    Temperature (°C) and humidity (%)
+No touch, no swipe gestures. All navigation uses rotary encoders and physical buttons. All screen elements must fit on the screen without scrolling.
+6. Settings Menu Structure
+
+All menus have the same header/title row at the top with the exact same formatting. 'Cancel' text on the top right, 'Accept' text on the top left, menu name in the middle.
+
+Time & Date
+
+    Infinite scrolling wheels for:
+
+        Hour
+
+        Minute
+
+        Day
+
+        Month
+
+        Year
+
+    Writes directly to RTC
+
+Display
+
+    Minimum display brightness toggle (screen completely off or brightness value 1 options)
+
+    Auto display brightness on/off toggle
+
+    Boost display brightness value
+
+Alarm
+
+    Current time in header
+
+    Alarm on/off
+
+    Alarm time (hour/minute)
+
+    MP3 sound selection from SD card
+
+    End alarm volume
+
+    End sunrise (LED brightness) value
+
+    Volume ramp duration
+
+    Sunrise ramp duration
+
+    Snooze on/off
+
+    Snooze duration
+
+    Hold to dismiss time
+
+    Repeat mode: once / weekdays
+
+
+7. Alarm Behaviour
+Triggering
+
+    Alarm triggers when:
+    currentHour == alarmHour && currentMinute == alarmMinute && notTriggeredYetToday
+
+    Seconds are ignored for robustness.
+
+    Checked every 1 second.
+
+Sunrise Behaviour
+
+    Begins at:
+    alarmTime - sunriseLeadInMinutes
+
+    Ramp over the configured ramp duration. Exponential curve ramp to relate to human perception of brightness.
+
+    Uses front and back LED channels. Front LEDs disabled while user input is detected (button press held or pressed to disable/snooze alarm), but front LED is restored if the user doesn't complete the snooze or dismiss alarm function.
+
+
+Alarm Sound
+
+    Play selected MP3 from SD card.
+
+    Volume ramps linearly from 0 → target volume.
+
+    If MP3 missing or SD removed:
+
+        Defaults to beep sound (short sine wave bursts every second).
+
+Snooze
+
+    Button press during alarm = snooze immediately.
+
+    Snooze duration configurable.
+
+    Turn off both front and back LEDs. Set both LEDs to user set end brightness value after snooze duration (no ramp).
+
+    Alarm plays at user set end volume after snooze duration (no ramp).
+
+Dismissal
+
+    Hold button for user configured number of seconds during alarm → dismiss.
+
+    Sound and Front LEDs stop immediately on button press. Back LEDs remain on.
+
+    Shrinking circle animation shows hold progress.
+
+    After dismissal:
+
+        Front LEDs turn off.
+        Back LEDs remain on.
+
+8. Physical Input Rules
+
+    Encoder 1: adjusts front LED brightness (on main screen only) / navigates menu icons to select what variable to change or select.
+
+    Encoder 2: adjusts back LED brightness (on main screen only) / changes value of selected variable.
+
+    Encoder Button 1: toggles front LED (on main screen only) / back/cancel in menus.
+
+    Encoder Button 2: toggles back LED (on main screen only) / confirm/save in menus.
+
+    Any input on main screen = Boost screen brightness to user set boost brightness value for 2 seconds
+
+9. LED Behaviour
+
+Sunrise Override
+
+    Sunrise temporarily overrides manual LED settings.
+
+10. Brightness Management
+Set display to user set boost display brightness on any screen except main screen.
+
+Auto‑Brightness
+
+    Uses simple LDR with resistor
+
+    Smoothed to avoid flicker
+
+    Minimum brightness enforced
+
+Boost
+
+    Any user interaction → boost screen brightness to user set boost brightness value for 2 seconds
+
+    Then returns to auto‑brightness or manual setting
+
+11. Sensor Timing
+Every 1 second
+
+    Update clock
+
+    Toggle colon
+
+    Check alarm trigger
+
+    Read AHT20 + BMP280 (with retry on failure)
+
+Event‑Driven
+
+    Encoder rotation / button press
+
+    Alarm start/stop
+
+    SD card insert/remove
+
+    UI interactions
+
+12. Persistent Storage (NVS)
+Stored Values
+
+All user configurable settings (Alarm, time and date, display brightness, volume, etc.)
+
+Rules
+
+    Write only when settings change.
+
+    Never write inside loops or periodic tasks.
+
+    On boot, load all settings before UI initialization.
+
+13. Error Handling
+
+    SD missing → Default to beep sound, alarm still functions.
+
+    AHT20/BMP280 failure → Display "--°C / --%".
+
+    RTC failure → Display “RTC ERROR”.
+
+    LED failure → Ignore sunrise effect, alarm still functions.
+
+14. State Machines
+Alarm State
+
+    Idle
+
+    Sunrise
+
+    Alarm active
+
+    Snoozed
+
+    Dismissing (touch‑hold)
+
+    Dismissed
+
+Display Brightness State
+
+    Auto
+
+    Boost
+
+    Manual override
+
+Input State
+
+    Idle
+
+    Encoder rotating
+
+    Button pressed
+
+    Button held
+
+    Hold‑complete
