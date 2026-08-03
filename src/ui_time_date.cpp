@@ -217,7 +217,9 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_style_bg_color(header, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(header, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(header, 0, 0);
-    lv_obj_set_style_pad_all(header, 0, 0);
+    lv_obj_set_style_pad_top(header, 2, 0);
+    lv_obj_set_style_pad_left(header, 2, 0);
+    lv_obj_set_style_pad_right(header, 2, 0);
     lv_obj_set_scrollable(header, false);
 
     lv_obj_t *lbl_cancel = lv_label_create(header);
@@ -230,7 +232,7 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
 
     lv_obj_t *lbl_title = lv_label_create(header);
     lv_label_set_text(lbl_title, title);
-    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_title, lv_color_white(), 0);
     lv_obj_align(lbl_title, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_clickable(lbl_title, false);
@@ -243,15 +245,6 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_align(lbl_accept, LV_ALIGN_RIGHT_MID, -10, 0);
     lv_obj_set_clickable(lbl_accept, false);
     lv_obj_set_click_focusable(lbl_accept, false);
-
-    lv_obj_t *divider = lv_obj_create(screen);
-    lv_obj_set_size(divider, DISP_W, 1);
-    lv_obj_set_pos(divider, 0, HEADER_H - 1);
-    lv_obj_set_style_bg_color(divider, lv_color_make(0x88, 0x88, 0x88), 0);
-    lv_obj_set_style_bg_opa(divider, LV_OPA_50, 0);
-    lv_obj_set_style_border_width(divider, 0, 0);
-    lv_obj_set_style_pad_all(divider, 0, 0);
-    lv_obj_set_scrollable(divider, false);
 }
 
 static void create_time_roller(lv_obj_t *parent,
