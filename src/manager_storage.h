@@ -21,8 +21,9 @@ struct AppSettings {
     uint8_t  repeat_mode;            // 0 = once, 1 = weekdays
 
     // Display
-    bool     auto_brightness;
     bool     min_brightness_off;     // true = screen off at minimum, false = value 1
+    uint8_t  manual_brightness;      // 0–255
+    bool     auto_brightness;
     uint8_t  boost_brightness;       // 0–255
 
     // LEDs (last known state — restored on boot)
@@ -39,5 +40,6 @@ AppSettings&      storage_manager_get();   // direct mutable reference
 
 void              storage_manager_save_all();          // write everything to NVS
 void              storage_manager_save_alarm();        // alarm fields only
+void              storage_manager_load_display();      // display fields only
 void              storage_manager_save_display();      // display fields only
 void              storage_manager_save_leds();         // LED fields only

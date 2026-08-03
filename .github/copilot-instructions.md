@@ -1,4 +1,4 @@
-If you want to test builds please use /home/leigh/.platformio/penv/bin/pio instead of pio command.
+If you want to test builds please use 'pio run' command.
 
 The device is a bedside user configurable sound and LED ramp up alarm clock with physical rotary encoder + button navigation, audio output, temperature/humidity/pressure sensing, auto‑brightness display, and two independent LED channels.
 

@@ -50,12 +50,12 @@ Stage 12 — Settings Menu Shell
 src/ui_main_settings_menu — icon grid for Time & Date / Alarm / Display / Other. Standard header (Cancel left, Accept right, title centre). Encoder navigation.
 Verification: Can navigate icons and enter/exit the shell
 
-
-
-
 Stage 13 — Time & Date Menu
 src/ui_time_date_menu — infinite scroll wheels (Hour, Minute, Day, Month, Year). Accept writes to RTC.
 Verification: Change time, accept, RTC updated
+
+
+
 
 Stage 14 — Display Settings Menu
 Part of src/ui_other_settings_menu — min brightness toggle, auto-brightness on/off, boost value. Saves to NVS.

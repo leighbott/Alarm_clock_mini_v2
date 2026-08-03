@@ -45,15 +45,17 @@ static void save_alarm() {
     prefs.putString("alm_mp3",      settings.alarm_mp3);
 }
 
-static void load_display() {
-    settings.auto_brightness    = prefs.getBool ("auto_br",   settings.auto_brightness);
-    settings.min_brightness_off = prefs.getBool ("min_br_off",settings.min_brightness_off);
-    settings.boost_brightness   = prefs.getUChar("boost_br",  settings.boost_brightness);
+void storage_manager_load_display() {
+    settings.min_brightness_off = prefs.getBool ("min_br_off", settings.min_brightness_off);
+    settings.manual_brightness  = prefs.getUChar("manual_br",  settings.manual_brightness);
+    settings.auto_brightness    = prefs.getBool ("auto_br",    settings.auto_brightness);
+    settings.boost_brightness   = prefs.getUChar("boost_br",   settings.boost_brightness);
 }
 
 static void save_display() {
-    prefs.putBool ("auto_br",    settings.auto_brightness);
     prefs.putBool ("min_br_off", settings.min_brightness_off);
+    prefs.putUChar("manual_br",  settings.manual_brightness);
+    prefs.putBool ("auto_br",    settings.auto_brightness);
     prefs.putUChar("boost_br",   settings.boost_brightness);
 }
 
@@ -87,8 +89,9 @@ void storage_manager_init() {
     settings.snooze_duration_min  = 9;
     settings.hold_dismiss_sec     = 3;
     settings.repeat_mode          = 1;   // weekdays
-    settings.auto_brightness      = true;
     settings.min_brightness_off   = false;
+    settings.manual_brightness    = 128;
+    settings.auto_brightness      = true;
     settings.boost_brightness     = 200;
     settings.led_front_brightness = 128;
     settings.led_back_brightness  = 128;
@@ -98,7 +101,7 @@ void storage_manager_init() {
     prefs.begin(NS, false);              // read-write mode
 
     load_alarm();
-    load_display();
+    storage_manager_load_display();
     load_leds();
 
     Serial.println("Storage: settings loaded from NVS");

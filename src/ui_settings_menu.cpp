@@ -1,4 +1,5 @@
 #include "ui_settings_menu.h"
+#include "ui_display_menu.h"
 #include "ui_time_date.h"
 
 #include <lvgl.h>
@@ -183,10 +184,21 @@ static void route_to_main_settings() {
 }
 
 static void route_to_child(uint8_t idx) {
-    if (idx >= 4 || !g_children[idx].screen) return;
+    if (idx >= 4) return;
+
+    if (g_children[idx].state == UiNavState::SETTINGS_DISPLAY && !g_children[idx].screen) {
+        ui_display_init();
+        g_children[idx].screen = ui_display_get_screen();
+    }
+
+    if (!g_children[idx].screen) return;
 
     if (g_children[idx].state == UiNavState::SETTINGS_TIME_DATE) {
         ui_time_date_on_enter();
+    }
+
+    if (g_children[idx].state == UiNavState::SETTINGS_DISPLAY) {
+        ui_display_on_enter();
     }
 
     g_state = g_children[idx].state;
@@ -203,6 +215,7 @@ void settings_menu_init(lv_obj_t *home_screen) {
     ui_time_date_init();
     g_children[0].screen = ui_time_date_get_screen();
     for (uint8_t i = 1; i < 4; ++i) {
+        if (g_children[i].state == UiNavState::SETTINGS_DISPLAY) continue;
         g_children[i].screen = build_child_screen(g_children[i].title);
     }
 }
@@ -266,8 +279,19 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
             return;
         }
 
+        case UiNavState::SETTINGS_DISPLAY: {
+            const UiDisplayAction action = ui_display_handle_inputs(
+                enc1_delta,
+                enc2_delta,
+                enc1_pressed,
+                enc2_pressed);
+            if (action != UiDisplayAction::NONE) {
+                route_to_main_settings();
+            }
+            return;
+        }
+
         case UiNavState::SETTINGS_ALARM:
-        case UiNavState::SETTINGS_DISPLAY:
         case UiNavState::SETTINGS_OTHER:
             if (enc1_pressed || enc2_pressed) {
                 route_to_main_settings();

@@ -8,6 +8,7 @@
 #include "manager_storage.h"
 #include "manager_led.h"
 #include "manager_audio.h"
+#include "manager_brightness.h"
 #include "ui_main_screen.h"
 #include "ui_settings_menu.h"
 
@@ -123,7 +124,7 @@ void setup() {
     delay(120);
 
     display_backlight_init();
-    display_set_brightness(255);
+    brightness_manager_init();
 
     // 4. LVGL
     lv_init();
@@ -200,6 +201,13 @@ void loop() {
     const bool enc2_held = input_manager_button_held(ENC2);
 
     if (settings_menu_is_home()) {
+        const bool home_input =
+            (enc1_delta != 0) || (enc2_delta != 0) ||
+            input_manager_button_pressed(ENC1) || input_manager_button_pressed(ENC2);
+        if (home_input) {
+            brightness_manager_note_home_input();
+        }
+
         const bool hold_ready =
             (enc1_held && input_manager_button_hold_ms(ENC1) >= 500) ||
             (enc2_held && input_manager_button_hold_ms(ENC2) >= 500);
@@ -208,9 +216,6 @@ void loop() {
             settings_menu_open_main();
             hold_open_latched = true;
 
-            // Prevent the press edge that started the hold from triggering menu actions.
-            (void)input_manager_button_pressed(ENC1);
-            (void)input_manager_button_pressed(ENC2);
         }
     } else {
         settings_menu_handle_inputs(
@@ -219,6 +224,8 @@ void loop() {
             input_manager_button_pressed(ENC1),
             input_manager_button_pressed(ENC2));
     }
+
+    brightness_manager_update();
 
     if (hold_open_latched && !enc1_held && !enc2_held) {
         hold_open_latched = false;

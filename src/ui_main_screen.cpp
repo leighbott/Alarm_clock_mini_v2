@@ -1,4 +1,5 @@
 #include "ui_main_screen.h"
+#include "manager_brightness.h"
 #include "manager_rtc.h"
 #include "manager_sensor.h"
 #include "manager_storage.h"
@@ -21,6 +22,8 @@ static lv_obj_t *lbl_alarm    = nullptr;   // "Alarm  07:00" / "Alarm  OFF"
 static lv_obj_t *lbl_until    = nullptr;   // "in 14h 26m"
 static lv_obj_t *lbl_temp     = nullptr;   // "23.4°C"
 static lv_obj_t *lbl_hum      = nullptr;   // "48%"
+static lv_obj_t *lbl_ldr_raw  = nullptr;   // "LDR: 4095"
+static lv_obj_t *lbl_brightness = nullptr; // "BR: 255"
 static lv_obj_t *main_screen  = nullptr;
 
 static bool colon_visible = true;
@@ -132,6 +135,18 @@ void ui_main_screen_init() {
     lv_obj_set_style_text_font(lbl_hum, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_hum, COL_PRIMARY, 0);
     lv_obj_align(lbl_hum, LV_ALIGN_TOP_RIGHT, -30, 175);
+
+    lbl_brightness = lv_label_create(scr);
+    lv_label_set_text(lbl_brightness, "BR: 000");
+    lv_obj_set_style_text_font(lbl_brightness, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_brightness, COL_DIM, 0);
+    lv_obj_align(lbl_brightness, LV_ALIGN_BOTTOM_LEFT, 8, -6);
+
+    lbl_ldr_raw = lv_label_create(scr);
+    lv_label_set_text(lbl_ldr_raw, "LDR: 0000");
+    lv_obj_set_style_text_font(lbl_ldr_raw, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_ldr_raw, COL_DIM, 0);
+    lv_obj_align(lbl_ldr_raw, LV_ALIGN_BOTTOM_RIGHT, -8, -6);
 }
 
 // ── Update (call every second) ────────────────────────────────────────────────
@@ -211,6 +226,12 @@ void ui_main_screen_update() {
     else
         snprintf(buf, sizeof(buf), "--%%" );
     lv_label_set_text(lbl_hum, buf);
+
+    snprintf(buf, sizeof(buf), "BR: %03u", brightness_manager_get_current_brightness());
+    lv_label_set_text(lbl_brightness, buf);
+
+    snprintf(buf, sizeof(buf), "LDR: %04u", brightness_manager_get_last_ldr_raw());
+    lv_label_set_text(lbl_ldr_raw, buf);
 }
 
 lv_obj_t *ui_main_screen_get_screen() {
