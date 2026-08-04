@@ -88,9 +88,15 @@ static void adjust_home_led(bool front_led, int32_t delta) {
                                      : &settings.led_back_enabled;
     const bool was_enabled = front_led ? led_manager_is_front_on() : led_manager_is_back_on();
 
-    int32_t next = (int32_t)(*stored_brightness) + delta;
-    if (next < 0) next = 0;
-    if (next > 255) next = 255;
+    static constexpr int32_t LEVEL_COUNT = 12;
+    static constexpr int32_t LEVEL_MAX = LEVEL_COUNT - 1;
+
+    const int32_t current_level = (int32_t)(((uint32_t)(*stored_brightness) * LEVEL_MAX + 127U) / 255U);
+    int32_t next_level = current_level + delta;
+    if (next_level < 0) next_level = 0;
+    if (next_level > LEVEL_MAX) next_level = LEVEL_MAX;
+
+    const int32_t next = (int32_t)((next_level * 255 + (LEVEL_MAX / 2)) / LEVEL_MAX);
 
     *stored_brightness = (uint8_t)next;
     *stored_enabled = next > 0;
@@ -216,6 +222,7 @@ void loop() {
     last_enc2 = enc2_now;
 
     static bool hold_open_latched = false;
+    static bool hold_open_armed = false;
     const bool enc1_held = input_manager_button_held(ENC1);
     const bool enc2_held = input_manager_button_held(ENC2);
 
@@ -234,6 +241,10 @@ void loop() {
     }
 
     if (settings_menu_is_home()) {
+        if (!hold_open_armed && !enc1_held && !enc2_held) {
+            hold_open_armed = true;
+        }
+
         const bool home_input =
             (enc1_delta != 0) || (enc2_delta != 0) ||
             input_manager_button_pressed(ENC1) || input_manager_button_pressed(ENC2);
@@ -253,7 +264,7 @@ void loop() {
             (enc1_held && input_manager_button_hold_ms(ENC1) >= 500) ||
             (enc2_held && input_manager_button_hold_ms(ENC2) >= 500);
 
-        if (!hold_open_latched && hold_ready) {
+        if (hold_open_armed && !hold_open_latched && hold_ready) {
             settings_menu_open_main();
             hold_open_latched = true;
 

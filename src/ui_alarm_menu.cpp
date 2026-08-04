@@ -60,10 +60,10 @@ static lv_obj_t *g_screen = nullptr;
 static lv_obj_t *g_value_widgets[VISIBLE_COLS] = {nullptr};
 static lv_obj_t *g_title_labels[VISIBLE_COLS] = {nullptr};
 static lv_obj_t *g_value_labels[VISIBLE_COLS] = {nullptr};
+static lv_obj_t *g_value_arcs[VISIBLE_COLS] = {nullptr};
 
 static lv_obj_t *g_repeat_overlay = nullptr;
-static lv_obj_t *g_repeat_hint = nullptr;
-static lv_obj_t *g_repeat_chip[8] = {nullptr}; // 0=Once, 1..7=Sun..Sat
+static lv_obj_t *g_repeat_chip[8] = {nullptr}; // 0=Once, 1..7=Mon..Sun
 static lv_obj_t *g_repeat_chip_lbl[8] = {nullptr};
 static bool g_repeat_open = false;
 static uint8_t g_repeat_focus = 0;
@@ -138,6 +138,26 @@ static const char *field_title(uint8_t idx) {
 
 static lv_color_t toggle_color(bool on) {
     return on ? lv_color_make(0x00, 0x9A, 0x3A) : lv_color_make(0xB0, 0x20, 0x20);
+}
+
+static bool field_uses_arc(AlarmField field) {
+    return field == AlarmField::HOUR ||
+           field == AlarmField::MINUTE ||
+           field == AlarmField::END_VOL ||
+           field == AlarmField::END_SUN;
+}
+
+static uint8_t repeat_slot_to_day_bit(uint8_t slot) {
+    switch (slot) {
+        case 1: return 1; // Mon
+        case 2: return 2; // Tue
+        case 3: return 3; // Wed
+        case 4: return 4; // Thu
+        case 5: return 5; // Fri
+        case 6: return 6; // Sat
+        case 7: return 0; // Sun
+        default: return 0;
+    }
 }
 
 static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &color) {
@@ -224,7 +244,8 @@ static void update_repeat_overlay_widgets() {
         if (i == 0) {
             on = (g_state.repeat_mask & REPEAT_ONCE) != 0;
         } else {
-            on = ((g_state.repeat_mask & REPEAT_ONCE) == 0) && ((g_state.repeat_mask & (1U << (i - 1))) != 0);
+            const uint8_t bit = repeat_slot_to_day_bit(i);
+            on = ((g_state.repeat_mask & REPEAT_ONCE) == 0) && ((g_state.repeat_mask & (1U << bit)) != 0);
         }
 
         lv_obj_set_style_bg_color(g_repeat_chip[i],
@@ -235,10 +256,6 @@ static void update_repeat_overlay_widgets() {
                                       (i == g_repeat_focus) ? lv_color_white() : lv_color_make(0x66, 0x66, 0x66),
                                       LV_PART_MAIN);
         lv_obj_set_style_text_color(g_repeat_chip_lbl[i], lv_color_white(), 0);
-    }
-
-    if (g_repeat_hint) {
-        lv_label_set_text(g_repeat_hint, "ENC1 move  ENC2 turn toggle  Btn close");
     }
 }
 
@@ -262,9 +279,10 @@ static void toggle_repeat_focus() {
         g_state.repeat_mask = REPEAT_ONCE;
     } else {
         g_state.repeat_mask &= (uint8_t)~REPEAT_ONCE;
-        const uint8_t bit = (uint8_t)(1U << (g_repeat_focus - 1));
-        if (g_state.repeat_mask & bit) g_state.repeat_mask &= (uint8_t)~bit;
-        else g_state.repeat_mask |= bit;
+        const uint8_t bit = repeat_slot_to_day_bit(g_repeat_focus);
+        const uint8_t mask_bit = (uint8_t)(1U << bit);
+        if (g_state.repeat_mask & mask_bit) g_state.repeat_mask &= (uint8_t)~mask_bit;
+        else g_state.repeat_mask |= mask_bit;
 
         if ((g_state.repeat_mask & 0x7F) == 0) {
             g_state.repeat_mask = REPEAT_ONCE;
@@ -366,15 +384,61 @@ static void render_fields() {
 
     for (uint8_t slot = 0; slot < VISIBLE_COLS; ++slot) {
         const uint8_t idx = (uint8_t)(g_window_start + slot);
-        if (!g_title_labels[slot] || !g_value_labels[slot]) continue;
+        if (!g_title_labels[slot] || !g_value_labels[slot] || !g_value_arcs[slot]) continue;
 
         lv_label_set_text(g_title_labels[slot], field_title(idx));
+
+        const AlarmField field = (AlarmField)idx;
+        const bool use_arc = field_uses_arc(field);
+        lv_obj_set_hidden(g_value_arcs[slot], !use_arc);
 
         char value[48];
         lv_color_t value_color;
         field_value_text(idx, value, sizeof(value), value_color);
-        lv_label_set_text(g_value_labels[slot], value);
-        lv_obj_set_style_text_color(g_value_labels[slot], value_color, 0);
+        if (use_arc) {
+            int32_t arc_min = 0;
+            int32_t arc_max = 100;
+            int32_t arc_value = 0;
+
+            switch (field) {
+                case AlarmField::HOUR:
+                    arc_min = 0;
+                    arc_max = 23;
+                    arc_value = g_state.hour;
+                    std::snprintf(value, sizeof(value), "%02u", (unsigned)g_state.hour);
+                    break;
+                case AlarmField::MINUTE:
+                    arc_min = 0;
+                    arc_max = 59;
+                    arc_value = g_state.minute;
+                    std::snprintf(value, sizeof(value), "%02u", (unsigned)g_state.minute);
+                    break;
+                case AlarmField::END_VOL:
+                    arc_min = 0;
+                    arc_max = 100;
+                    arc_value = g_state.end_vol_pct;
+                    std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.end_vol_pct);
+                    break;
+                case AlarmField::END_SUN:
+                    arc_min = 0;
+                    arc_max = 100;
+                    arc_value = g_state.end_sun_pct;
+                    std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.end_sun_pct);
+                    break;
+                default:
+                    break;
+            }
+
+            lv_arc_set_range(g_value_arcs[slot], arc_min, arc_max);
+            lv_arc_set_value(g_value_arcs[slot], arc_value);
+            lv_obj_set_style_text_font(g_value_labels[slot], &lv_font_montserrat_20, 0);
+            lv_obj_set_style_text_color(g_value_labels[slot], lv_color_white(), 0);
+            lv_label_set_text(g_value_labels[slot], value);
+        } else {
+            lv_obj_set_style_text_font(g_value_labels[slot], &lv_font_montserrat_20, 0);
+            lv_label_set_text(g_value_labels[slot], value);
+            lv_obj_set_style_text_color(g_value_labels[slot], value_color, 0);
+        }
     }
 
     update_focus();
@@ -456,6 +520,22 @@ static void create_column(lv_obj_t *parent, int x, uint8_t slot) {
     lv_obj_set_click_focusable(title_label, false);
 
     lv_obj_t *widget = create_value_shell(col, 0);
+
+    lv_obj_t *arc = lv_arc_create(widget);
+    lv_obj_set_size(arc, 58, 58);
+    lv_obj_center(arc);
+    lv_arc_set_rotation(arc, 270);
+    lv_arc_set_bg_angles(arc, 0, 360);
+    lv_arc_set_range(arc, 0, 100);
+    lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
+    lv_obj_set_style_arc_width(arc, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(arc, lv_color_make(0x34, 0x34, 0x34), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(arc, lv_color_make(0x4D, 0xB1, 0xFF), LV_PART_INDICATOR);
+    lv_obj_remove_style(arc, nullptr, LV_PART_KNOB);
+    lv_obj_set_clickable(arc, false);
+    lv_obj_set_scrollable(arc, false);
+
     lv_obj_t *value_label = lv_label_create(widget);
     lv_label_set_text(value_label, "-");
     lv_obj_set_style_text_font(value_label, &lv_font_montserrat_20, 0);
@@ -465,14 +545,15 @@ static void create_column(lv_obj_t *parent, int x, uint8_t slot) {
     lv_obj_center(value_label);
 
     g_value_widgets[slot] = widget;
+    g_value_arcs[slot] = arc;
     g_title_labels[slot] = title_label;
     g_value_labels[slot] = value_label;
 }
 
 static void build_repeat_overlay(lv_obj_t *parent) {
     g_repeat_overlay = lv_obj_create(parent);
-    lv_obj_set_size(g_repeat_overlay, DISP_W - 26, DISP_H - 18);
-    lv_obj_align(g_repeat_overlay, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_size(g_repeat_overlay, DISP_W, DISP_H);
+    lv_obj_set_pos(g_repeat_overlay, 0, 0);
     lv_obj_set_style_bg_color(g_repeat_overlay, lv_color_make(0x08, 0x08, 0x08), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(g_repeat_overlay, LV_OPA_90, LV_PART_MAIN);
     lv_obj_set_style_border_width(g_repeat_overlay, 2, LV_PART_MAIN);
@@ -483,43 +564,26 @@ static void build_repeat_overlay(lv_obj_t *parent) {
     lv_label_set_text(title, "Repeat Pattern");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
-    static const char *chip_text[8] = {"Once", "S", "M", "T", "W", "T", "F", "S"};
-
-    g_repeat_chip[0] = lv_obj_create(g_repeat_overlay);
-    lv_obj_set_size(g_repeat_chip[0], 90, 24);
-    lv_obj_align(g_repeat_chip[0], LV_ALIGN_TOP_MID, 0, 30);
-    lv_obj_set_style_radius(g_repeat_chip[0], 6, LV_PART_MAIN);
-    lv_obj_set_scrollable(g_repeat_chip[0], false);
-
-    g_repeat_chip_lbl[0] = lv_label_create(g_repeat_chip[0]);
-    lv_label_set_text(g_repeat_chip_lbl[0], chip_text[0]);
-    lv_obj_set_style_text_font(g_repeat_chip_lbl[0], &lv_font_montserrat_14, 0);
-    lv_obj_center(g_repeat_chip_lbl[0]);
-
-    const int start_x = 12;
+    static const char *chip_text[8] = {"Once", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
     const int y = 64;
-    for (uint8_t i = 1; i < 8; ++i) {
+    int x = 8;
+    for (uint8_t i = 0; i < 8; ++i) {
         g_repeat_chip[i] = lv_obj_create(g_repeat_overlay);
-        lv_obj_set_size(g_repeat_chip[i], 46, 24);
-        lv_obj_set_pos(g_repeat_chip[i], start_x + (i - 1) * 52, y);
+        const int chip_w = (i == 0) ? 76 : 48;
+        lv_obj_set_size(g_repeat_chip[i], chip_w, 26);
+        lv_obj_set_pos(g_repeat_chip[i], x, y);
         lv_obj_set_style_radius(g_repeat_chip[i], 6, LV_PART_MAIN);
         lv_obj_set_scrollable(g_repeat_chip[i], false);
 
         g_repeat_chip_lbl[i] = lv_label_create(g_repeat_chip[i]);
         lv_label_set_text(g_repeat_chip_lbl[i], chip_text[i]);
-        lv_obj_set_style_text_font(g_repeat_chip_lbl[i], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(g_repeat_chip_lbl[i], &lv_font_montserrat_16, 0);
         lv_obj_center(g_repeat_chip_lbl[i]);
-    }
 
-    g_repeat_hint = lv_label_create(g_repeat_overlay);
-    lv_label_set_text(g_repeat_hint, "");
-    lv_obj_set_width(g_repeat_hint, DISP_W - 48);
-    lv_obj_set_style_text_font(g_repeat_hint, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(g_repeat_hint, lv_color_make(0xD0, 0xD0, 0xD0), 0);
-    lv_obj_set_style_text_align(g_repeat_hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(g_repeat_hint, LV_ALIGN_BOTTOM_MID, 0, -12);
+        x += chip_w + 4;
+    }
 
     lv_obj_set_hidden(g_repeat_overlay, true);
 }
@@ -587,10 +651,17 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
                                      bool enc1_pressed,
                                      bool enc2_pressed) {
     if (g_repeat_open) {
-        if (enc1_pressed || enc2_pressed) {
+        if (enc1_pressed) {
             close_repeat_overlay();
             render_fields();
             return UiAlarmAction::NONE;
+        }
+
+        if (enc2_pressed) {
+            close_repeat_overlay();
+            save_state();
+            render_fields();
+            return UiAlarmAction::ACCEPT;
         }
 
         if (enc1_delta != 0) {

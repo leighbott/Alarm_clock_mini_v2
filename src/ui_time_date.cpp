@@ -12,16 +12,25 @@ static constexpr int HEADER_H = 34;
 static constexpr int CONTENT_Y = 36;
 static constexpr int CONTENT_H = DISP_H - CONTENT_Y;
 
-static constexpr uint8_t TIME_ROLLER_COUNT = 5;
+static constexpr uint8_t FIELD_COUNT = 5;
 static constexpr uint16_t YEAR_MIN = 2024;
 static constexpr uint16_t YEAR_MAX = 2099;
 
-static constexpr int ROLLER_PAD_X = 4;
-static constexpr int ROLLER_GAP_X = 4;
-static constexpr int ROLLER_COL_W = (DISP_W - (2 * ROLLER_PAD_X) - (4 * ROLLER_GAP_X)) / 5;
-static constexpr int ROLLER_LABEL_H = 16;
-static constexpr int ROLLER_Y = 18;
-static constexpr int ROLLER_H = CONTENT_H - ROLLER_Y - 8;
+static constexpr int CONTENT_PAD_X = 4;
+static constexpr int CONTENT_GAP_X = 4;
+static constexpr int COL_W = (DISP_W - (2 * CONTENT_PAD_X) - (4 * CONTENT_GAP_X)) / 5;
+static constexpr int TITLE_H = 20;
+static constexpr int VALUE_W = 78;
+static constexpr int VALUE_H = 78;
+static constexpr int VALUE_Y = 24;
+
+enum class TimeField : uint8_t {
+    HOUR = 0,
+    MINUTE,
+    DAY,
+    MONTH,
+    YEAR,
+};
 
 struct TimePickerState {
     uint8_t hour;
@@ -29,18 +38,15 @@ struct TimePickerState {
     uint8_t day;
     uint8_t month;
     uint16_t year;
-    uint8_t selected_roller_idx;
+    TimeField selected;
 };
 
 static lv_obj_t *g_screen = nullptr;
-static lv_obj_t *g_rollers[TIME_ROLLER_COUNT] = {nullptr, nullptr, nullptr, nullptr, nullptr};
-static TimePickerState g_state = {0, 0, 1, 1, YEAR_MIN, 0};
+static lv_obj_t *g_value_widgets[FIELD_COUNT] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+static lv_obj_t *g_arc_widgets[FIELD_COUNT] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+static lv_obj_t *g_value_labels[FIELD_COUNT] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 
-static char g_hour_options[128];
-static char g_minute_options[256];
-static char g_day_options[160];
-static char g_month_options[64];
-static char g_year_options[640];
+static TimePickerState g_state = {0, 0, 1, 1, YEAR_MIN, TimeField::HOUR};
 
 static bool is_leap_year(uint16_t year) {
     return ((year % 4U) == 0U && (year % 100U) != 0U) || ((year % 400U) == 0U);
@@ -68,7 +74,7 @@ static uint8_t days_in_month(uint16_t year, uint8_t month) {
     }
 }
 
-static void clamp_date_to_valid(TimePickerState &state) {
+static void clamp_state(TimePickerState &state) {
     if (state.year < YEAR_MIN) state.year = YEAR_MIN;
     if (state.year > YEAR_MAX) state.year = YEAR_MAX;
 
@@ -81,8 +87,6 @@ static void clamp_date_to_valid(TimePickerState &state) {
     const uint8_t dim = days_in_month(state.year, state.month);
     if (state.day < 1) state.day = 1;
     if (state.day > dim) state.day = dim;
-
-    if (state.selected_roller_idx >= TIME_ROLLER_COUNT) state.selected_roller_idx = 0;
 }
 
 static uint8_t wrap_u8(uint8_t value, int32_t delta, uint8_t min_v, uint8_t max_v) {
@@ -99,112 +103,108 @@ static uint16_t wrap_u16(uint16_t value, int32_t delta, uint16_t min_v, uint16_t
     return (uint16_t)((int32_t)min_v + normalized);
 }
 
-static void build_numeric_options(char *buf,
-                                  size_t buf_size,
-                                  int min_v,
-                                  int max_v,
-                                  int width) {
-    if (!buf || buf_size == 0) return;
+static uint8_t selected_index() {
+    return (uint8_t)g_state.selected;
+}
 
-    size_t used = 0;
-    buf[0] = '\0';
+static const char *field_title(uint8_t idx) {
+    static const char *titles[FIELD_COUNT] = {"Hour", "Min", "Day", "Mon", "Year"};
+    return titles[idx];
+}
 
-    for (int v = min_v; v <= max_v; ++v) {
-        const bool is_last = (v == max_v);
-        const int written = std::snprintf(
-            buf + used,
-            buf_size - used,
-            is_last ? "%0*d" : "%0*d\n",
-            width,
-            v);
-        if (written <= 0 || (size_t)written >= (buf_size - used)) {
+static void field_value_and_range(uint8_t idx, int &value, int &min_v, int &max_v, char *buf, size_t buf_len) {
+    value = 0;
+    min_v = 0;
+    max_v = 100;
+
+    switch ((TimeField)idx) {
+        case TimeField::HOUR:
+            value = (int)g_state.hour;
+            min_v = 0;
+            max_v = 23;
+            std::snprintf(buf, buf_len, "%02u", (unsigned)g_state.hour);
             break;
-        }
-        used += (size_t)written;
+        case TimeField::MINUTE:
+            value = (int)g_state.minute;
+            min_v = 0;
+            max_v = 59;
+            std::snprintf(buf, buf_len, "%02u", (unsigned)g_state.minute);
+            break;
+        case TimeField::DAY:
+            value = (int)g_state.day;
+            min_v = 1;
+            max_v = (int)days_in_month(g_state.year, g_state.month);
+            std::snprintf(buf, buf_len, "%02u", (unsigned)g_state.day);
+            break;
+        case TimeField::MONTH:
+            value = (int)g_state.month;
+            min_v = 1;
+            max_v = 12;
+            std::snprintf(buf, buf_len, "%02u", (unsigned)g_state.month);
+            break;
+        case TimeField::YEAR:
+            value = (int)g_state.year;
+            min_v = YEAR_MIN;
+            max_v = YEAR_MAX;
+            std::snprintf(buf, buf_len, "%04u", (unsigned)g_state.year);
+            break;
     }
 }
 
-static void highlight_selected_roller() {
-    for (uint8_t i = 0; i < TIME_ROLLER_COUNT; ++i) {
-        if (!g_rollers[i]) continue;
-        if (i == g_state.selected_roller_idx) lv_obj_add_state(g_rollers[i], LV_STATE_FOCUSED);
-        else lv_obj_clear_state(g_rollers[i], LV_STATE_FOCUSED);
+static void update_focus() {
+    for (uint8_t i = 0; i < FIELD_COUNT; ++i) {
+        if (!g_value_widgets[i]) continue;
+        if (i == selected_index()) lv_obj_add_state(g_value_widgets[i], LV_STATE_FOCUSED);
+        else lv_obj_clear_state(g_value_widgets[i], LV_STATE_FOCUSED);
     }
 }
 
-static void update_day_roller_options() {
-    if (!g_rollers[2]) return;
+static void update_widgets() {
+    clamp_state(g_state);
 
-    build_numeric_options(g_day_options,
-                          sizeof(g_day_options),
-                          1,
-                          days_in_month(g_state.year, g_state.month),
-                          2);
-    lv_roller_set_options(g_rollers[2], g_day_options, LV_ROLLER_MODE_NORMAL);
+    char text[8];
+    for (uint8_t i = 0; i < FIELD_COUNT; ++i) {
+        if (!g_arc_widgets[i] || !g_value_labels[i]) continue;
 
-    clamp_date_to_valid(g_state);
-    lv_roller_set_selected(g_rollers[2], (uint16_t)(g_state.day - 1), LV_ANIM_OFF);
-}
+        int value;
+        int min_v;
+        int max_v;
+        field_value_and_range(i, value, min_v, max_v, text, sizeof(text));
 
-static void update_rollers_from_state() {
-    if (!g_rollers[0] || !g_rollers[1] || !g_rollers[2] || !g_rollers[3] || !g_rollers[4]) {
-        return;
+        lv_arc_set_range(g_arc_widgets[i], min_v, max_v);
+        lv_arc_set_value(g_arc_widgets[i], value);
+        lv_label_set_text(g_value_labels[i], text);
     }
 
-    clamp_date_to_valid(g_state);
-
-    lv_roller_set_selected(g_rollers[0], g_state.hour, LV_ANIM_OFF);
-    lv_roller_set_selected(g_rollers[1], g_state.minute, LV_ANIM_OFF);
-    lv_roller_set_selected(g_rollers[3], (uint16_t)(g_state.month - 1), LV_ANIM_OFF);
-    lv_roller_set_selected(g_rollers[4], (uint16_t)(g_state.year - YEAR_MIN), LV_ANIM_OFF);
-
-    update_day_roller_options();
-    lv_roller_set_selected(g_rollers[2], (uint16_t)(g_state.day - 1), LV_ANIM_OFF);
-    highlight_selected_roller();
+    update_focus();
 }
 
-static void sync_state_from_rollers() {
-    if (!g_rollers[0] || !g_rollers[1] || !g_rollers[2] || !g_rollers[3] || !g_rollers[4]) {
-        return;
-    }
-
-    g_state.hour = (uint8_t)lv_roller_get_selected(g_rollers[0]);
-    g_state.minute = (uint8_t)lv_roller_get_selected(g_rollers[1]);
-    g_state.day = (uint8_t)(lv_roller_get_selected(g_rollers[2]) + 1);
-    g_state.month = (uint8_t)(lv_roller_get_selected(g_rollers[3]) + 1);
-    g_state.year = (uint16_t)(YEAR_MIN + lv_roller_get_selected(g_rollers[4]));
-
-    clamp_date_to_valid(g_state);
-}
-
-static void adjust_selected_roller_value(int32_t delta) {
+static void adjust_selected_value(int32_t delta) {
     if (delta == 0) return;
 
-    switch (g_state.selected_roller_idx) {
-        case 0:
+    switch (g_state.selected) {
+        case TimeField::HOUR:
             g_state.hour = wrap_u8(g_state.hour, delta, 0, 23);
             break;
-        case 1:
+        case TimeField::MINUTE:
             g_state.minute = wrap_u8(g_state.minute, delta, 0, 59);
             break;
-        case 2: {
+        case TimeField::DAY: {
             const uint8_t dim = days_in_month(g_state.year, g_state.month);
             g_state.day = wrap_u8(g_state.day, delta, 1, dim);
             break;
         }
-        case 3:
+        case TimeField::MONTH:
             g_state.month = wrap_u8(g_state.month, delta, 1, 12);
-            clamp_date_to_valid(g_state);
+            clamp_state(g_state);
             break;
-        case 4:
+        case TimeField::YEAR:
             g_state.year = wrap_u16(g_state.year, delta, YEAR_MIN, YEAR_MAX);
-            clamp_date_to_valid(g_state);
-            break;
-        default:
+            clamp_state(g_state);
             break;
     }
 
-    update_rollers_from_state();
+    update_widgets();
 }
 
 static void apply_header_base(lv_obj_t *screen, const char *title) {
@@ -247,12 +247,31 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_click_focusable(lbl_accept, false);
 }
 
-static void create_time_roller(lv_obj_t *parent,
-                               int x,
-                               const char *label_text,
-                               uint8_t idx) {
+static lv_obj_t *create_value_shell(lv_obj_t *parent, int x) {
+    lv_obj_t *widget = lv_obj_create(parent);
+    lv_obj_set_size(widget, VALUE_W, VALUE_H);
+    lv_obj_set_pos(widget, x + ((COL_W - VALUE_W) / 2), VALUE_Y);
+    lv_obj_set_style_bg_color(widget, lv_color_make(0x16, 0x16, 0x16), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(widget, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(widget, 12, LV_PART_MAIN);
+    lv_obj_set_style_border_width(widget, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(widget, lv_color_make(0x3A, 0x3A, 0x3A), LV_PART_MAIN);
+    lv_obj_set_style_outline_width(widget, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(widget, 0, LV_PART_MAIN);
+    lv_obj_set_scrollable(widget, false);
+
+    lv_obj_set_style_border_width(widget, 3, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_color(widget, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_width(widget, 1, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_color(widget, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_opa(widget, LV_OPA_70, LV_PART_MAIN | LV_STATE_FOCUSED);
+
+    return widget;
+}
+
+static void create_field_column(lv_obj_t *parent, int x, uint8_t idx) {
     lv_obj_t *col = lv_obj_create(parent);
-    lv_obj_set_size(col, ROLLER_COL_W, CONTENT_H);
+    lv_obj_set_size(col, COL_W, CONTENT_H);
     lv_obj_set_pos(col, x, 0);
     lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(col, 0, 0);
@@ -260,40 +279,41 @@ static void create_time_roller(lv_obj_t *parent,
     lv_obj_set_scrollable(col, false);
 
     lv_obj_t *label = lv_label_create(col);
-    lv_label_set_text(label, label_text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_label_set_text(label, field_title(idx));
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label, lv_color_make(0xDD, 0xDD, 0xDD), 0);
-    lv_obj_set_size(label, ROLLER_COL_W, ROLLER_LABEL_H);
+    lv_obj_set_size(label, COL_W, TITLE_H);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_clickable(label, false);
     lv_obj_set_click_focusable(label, false);
 
-    lv_obj_t *roller = lv_roller_create(col);
-    lv_obj_set_size(roller, ROLLER_COL_W, ROLLER_H);
-    lv_obj_set_pos(roller, 0, ROLLER_Y);
-    lv_obj_set_style_bg_color(roller, lv_color_make(0x18, 0x18, 0x18), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_radius(roller, 6, LV_PART_MAIN);
-    lv_obj_set_style_border_width(roller, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(roller, lv_color_make(0x44, 0x44, 0x44), LV_PART_MAIN);
-    lv_obj_set_style_pad_ver(roller, 2, LV_PART_MAIN);
-    lv_obj_set_style_text_font(roller, &lv_font_montserrat_16, LV_PART_MAIN);
-    lv_obj_set_style_text_color(roller, lv_color_make(0xAA, 0xAA, 0xAA), LV_PART_MAIN);
-    lv_obj_set_style_text_color(roller, lv_color_white(), LV_PART_SELECTED);
-    lv_obj_set_style_bg_color(roller, lv_color_make(0x30, 0x30, 0x30), LV_PART_SELECTED);
-    lv_obj_set_style_bg_opa(roller, LV_OPA_80, LV_PART_SELECTED);
-    lv_obj_set_style_border_width(roller, 2, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_color(roller, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_width(roller, 1, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_color(roller, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_opa(roller, LV_OPA_70, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_scrollable(roller, false);
-    lv_obj_set_clickable(roller, false);
-    lv_obj_set_click_focusable(roller, false);
-    lv_roller_set_visible_row_count(roller, 3);
+    lv_obj_t *widget = create_value_shell(col, 0);
+    g_value_widgets[idx] = widget;
 
-    g_rollers[idx] = roller;
+    lv_obj_t *arc = lv_arc_create(widget);
+    lv_obj_set_size(arc, 58, 58);
+    lv_obj_center(arc);
+    lv_arc_set_rotation(arc, 270);
+    lv_arc_set_bg_angles(arc, 0, 360);
+    lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
+    lv_obj_set_style_arc_width(arc, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(arc, lv_color_make(0x34, 0x34, 0x34), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(arc, lv_color_make(0x4D, 0xB1, 0xFF), LV_PART_INDICATOR);
+    lv_obj_remove_style(arc, nullptr, LV_PART_KNOB);
+    lv_obj_set_clickable(arc, false);
+    lv_obj_set_scrollable(arc, false);
+    g_arc_widgets[idx] = arc;
+
+    lv_obj_t *value_label = lv_label_create(widget);
+    lv_label_set_text(value_label, "00");
+    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(value_label, lv_color_white(), 0);
+    lv_obj_center(value_label);
+    lv_obj_set_clickable(value_label, false);
+    lv_obj_set_click_focusable(value_label, false);
+    g_value_labels[idx] = value_label;
 }
 
 static lv_obj_t *build_screen() {
@@ -314,24 +334,12 @@ static lv_obj_t *build_screen() {
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_set_scrollable(content, false);
 
-    static const char *labels[TIME_ROLLER_COUNT] = {"Hour", "Min", "Day", "Mon", "Year"};
-    for (uint8_t i = 0; i < TIME_ROLLER_COUNT; ++i) {
-        const int x = ROLLER_PAD_X + i * (ROLLER_COL_W + ROLLER_GAP_X);
-        create_time_roller(content, x, labels[i], i);
+    for (uint8_t i = 0; i < FIELD_COUNT; ++i) {
+        const int x = CONTENT_PAD_X + i * (COL_W + CONTENT_GAP_X);
+        create_field_column(content, x, i);
     }
 
-    build_numeric_options(g_hour_options, sizeof(g_hour_options), 0, 23, 2);
-    build_numeric_options(g_minute_options, sizeof(g_minute_options), 0, 59, 2);
-    build_numeric_options(g_month_options, sizeof(g_month_options), 1, 12, 2);
-    build_numeric_options(g_year_options, sizeof(g_year_options), YEAR_MIN, YEAR_MAX, 4);
-
-    lv_roller_set_options(g_rollers[0], g_hour_options, LV_ROLLER_MODE_NORMAL);
-    lv_roller_set_options(g_rollers[1], g_minute_options, LV_ROLLER_MODE_NORMAL);
-    lv_roller_set_options(g_rollers[3], g_month_options, LV_ROLLER_MODE_NORMAL);
-    lv_roller_set_options(g_rollers[4], g_year_options, LV_ROLLER_MODE_NORMAL);
-
-    update_day_roller_options();
-
+    update_widgets();
     return screen;
 }
 
@@ -353,9 +361,10 @@ void ui_time_date_on_enter() {
     g_state.day = (uint8_t)now.day();
     g_state.month = (uint8_t)now.month();
     g_state.year = (uint16_t)now.year();
-    g_state.selected_roller_idx = 0;
+    g_state.selected = TimeField::HOUR;
 
-    update_rollers_from_state();
+    clamp_state(g_state);
+    update_widgets();
 }
 
 UiTimeDateAction ui_time_date_handle_inputs(int32_t enc1_delta,
@@ -367,7 +376,7 @@ UiTimeDateAction ui_time_date_handle_inputs(int32_t enc1_delta,
     }
 
     if (enc2_pressed) {
-        sync_state_from_rollers();
+        clamp_state(g_state);
         const DateTime new_dt(
             g_state.year,
             g_state.month,
@@ -383,16 +392,16 @@ UiTimeDateAction ui_time_date_handle_inputs(int32_t enc1_delta,
         const int8_t direction = (enc1_delta > 0) ? 1 : -1;
         int32_t steps = (enc1_delta > 0) ? enc1_delta : -enc1_delta;
         while (steps-- > 0) {
-            int16_t next = (int16_t)g_state.selected_roller_idx + direction;
-            if (next < 0) next = (int16_t)TIME_ROLLER_COUNT - 1;
-            if (next >= TIME_ROLLER_COUNT) next = 0;
-            g_state.selected_roller_idx = (uint8_t)next;
+            int16_t next = (int16_t)selected_index() + direction;
+            if (next < 0) next = (int16_t)FIELD_COUNT - 1;
+            if (next >= FIELD_COUNT) next = 0;
+            g_state.selected = (TimeField)next;
         }
-        highlight_selected_roller();
+        update_focus();
     }
 
     if (enc2_delta != 0) {
-        adjust_selected_roller_value(enc2_delta);
+        adjust_selected_value(enc2_delta);
     }
 
     return UiTimeDateAction::NONE;

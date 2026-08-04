@@ -289,7 +289,7 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
             if (action == UiTimeDateAction::CANCEL) {
                 route_to_main_settings();
             } else if (action == UiTimeDateAction::ACCEPT) {
-                route_to_home();
+                route_to_main_settings();
             }
             return;
         }
@@ -303,7 +303,7 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
             if (action == UiDisplayAction::CANCEL) {
                 route_to_main_settings();
             } else if (action == UiDisplayAction::ACCEPT) {
-                route_to_home();
+                route_to_main_settings();
             }
             return;
         }
@@ -317,7 +317,7 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
             if (action == UiAlarmAction::CANCEL) {
                 route_to_main_settings();
             } else if (action == UiAlarmAction::ACCEPT) {
-                route_to_home();
+                route_to_main_settings();
             }
             return;
         }

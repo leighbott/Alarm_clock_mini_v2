@@ -151,6 +151,10 @@ static void update_widgets() {
 
     if (g_toggle_labels[1]) {
         lv_label_set_text(g_toggle_labels[1], g_state.auto_brightness ? "ON" : "OFF");
+        lv_obj_set_style_text_color(g_toggle_labels[1],
+                                    g_state.auto_brightness ? lv_color_make(0x00, 0x9A, 0x3A)
+                                                            : lv_color_make(0xB0, 0x20, 0x20),
+                                    0);
     }
 
     char buf[8];

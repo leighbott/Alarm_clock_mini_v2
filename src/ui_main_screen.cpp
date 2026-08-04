@@ -62,91 +62,88 @@ void ui_main_screen_init() {
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-    // ── Time (large) ──────────────────────────────────────────────────────────
+    // Left cluster: time/date/alarm
     lbl_time = lv_label_create(scr);
     lv_label_set_text(lbl_time, "00:00");
     lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(lbl_time, COL_PRIMARY, 0);
-    lv_obj_align(lbl_time, LV_ALIGN_TOP_MID, -20, 8);
+    lv_obj_align(lbl_time, LV_ALIGN_TOP_LEFT, 8, -2);
 
-    // ── AM/PM (above seconds, to the right of time) ────────────────────────
     lbl_ampm = lv_label_create(scr);
     lv_label_set_text(lbl_ampm, "AM");
-    lv_obj_set_style_text_font(lbl_ampm, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(lbl_ampm, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_ampm, COL_PRIMARY, 0);
-    lv_obj_align_to(lbl_ampm, lbl_time, LV_ALIGN_OUT_RIGHT_TOP, 6, 4);
+    lv_obj_align_to(lbl_ampm, lbl_time, LV_ALIGN_OUT_RIGHT_TOP, 6, 10);
 
-    // ── Seconds (below AM/PM) ────────────────────────────────────────────
     lbl_secs = lv_label_create(scr);
     lv_label_set_text(lbl_secs, "00");
-    lv_obj_set_style_text_font(lbl_secs, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(lbl_secs, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_secs, COL_DIM, 0);
     lv_obj_align_to(lbl_secs, lbl_ampm, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
 
-    // ── Date ─────────────────────────────────────────────────────────────────
     lbl_date = lv_label_create(scr);
     lv_label_set_text(lbl_date, "---");
-    lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_date, COL_DIM, 0);
-    lv_obj_align(lbl_date, LV_ALIGN_TOP_MID, 0, 72);
+    lv_obj_set_width(lbl_date, 280);
+    lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(lbl_date, LV_ALIGN_TOP_LEFT, 10, 54);
 
-    // ── Divider ───────────────────────────────────────────────────────────────
     lv_obj_t *line = lv_obj_create(scr);
-    lv_obj_set_size(line, 280, 1);
+    lv_obj_set_size(line, 276, 1);
     lv_obj_set_style_bg_color(line, COL_DIM, 0);
     lv_obj_set_style_bg_opa(line, LV_OPA_30, 0);
     lv_obj_set_style_border_width(line, 0, 0);
     lv_obj_set_style_pad_all(line, 0, 0);
-    lv_obj_align(line, LV_ALIGN_TOP_MID, 0, 98);
+    lv_obj_align(line, LV_ALIGN_TOP_LEFT, 10, 70);
 
-    // ── Next alarm ────────────────────────────────────────────────────────────
     lbl_alarm = lv_label_create(scr);
     lv_label_set_text(lbl_alarm, "Alarm  OFF");
-    lv_obj_set_style_text_font(lbl_alarm, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(lbl_alarm, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_alarm, COL_ACCENT, 0);
-    lv_obj_align(lbl_alarm, LV_ALIGN_TOP_MID, 0, 110);
+    lv_obj_set_width(lbl_alarm, 276);
+    lv_obj_set_style_text_align(lbl_alarm, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(lbl_alarm, LV_ALIGN_TOP_LEFT, 10, 76);
 
-    // ── Time until alarm ──────────────────────────────────────────────────────
     lbl_until = lv_label_create(scr);
     lv_label_set_text(lbl_until, "");
     lv_obj_set_style_text_font(lbl_until, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_until, COL_DIM, 0);
-    lv_obj_align(lbl_until, LV_ALIGN_TOP_MID, 0, 138);
+    lv_obj_set_width(lbl_until, 276);
+    lv_obj_set_style_text_align(lbl_until, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(lbl_until, LV_ALIGN_TOP_LEFT, 10, 96);
 
-    // ── Divider ───────────────────────────────────────────────────────────────
     lv_obj_t *line2 = lv_obj_create(scr);
-    lv_obj_set_size(line2, 280, 1);
+    lv_obj_set_size(line2, 410, 1);
     lv_obj_set_style_bg_color(line2, COL_DIM, 0);
     lv_obj_set_style_bg_opa(line2, LV_OPA_30, 0);
     lv_obj_set_style_border_width(line2, 0, 0);
     lv_obj_set_style_pad_all(line2, 0, 0);
-    lv_obj_align(line2, LV_ALIGN_TOP_MID, 0, 162);
+    lv_obj_align(line2, LV_ALIGN_TOP_MID, 0, 116);
 
-    // ── Temperature ───────────────────────────────────────────────────────────
     lbl_temp = lv_label_create(scr);
     lv_label_set_text(lbl_temp, "--.-\xc2\xb0\x43");  // "--.-°C"
     lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_temp, COL_PRIMARY, 0);
-    lv_obj_align(lbl_temp, LV_ALIGN_TOP_LEFT, 30, 175);
+    lv_obj_align(lbl_temp, LV_ALIGN_TOP_RIGHT, -10, 10);
 
-    // ── Humidity ──────────────────────────────────────────────────────────────
     lbl_hum = lv_label_create(scr);
     lv_label_set_text(lbl_hum, "--%");
     lv_obj_set_style_text_font(lbl_hum, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_hum, COL_PRIMARY, 0);
-    lv_obj_align(lbl_hum, LV_ALIGN_TOP_RIGHT, -30, 175);
+    lv_obj_align(lbl_hum, LV_ALIGN_TOP_RIGHT, -10, 42);
 
     lbl_brightness = lv_label_create(scr);
     lv_label_set_text(lbl_brightness, "BR: 000");
     lv_obj_set_style_text_font(lbl_brightness, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_brightness, COL_DIM, 0);
-    lv_obj_align(lbl_brightness, LV_ALIGN_BOTTOM_LEFT, 8, -6);
+    lv_obj_align(lbl_brightness, LV_ALIGN_BOTTOM_LEFT, 10, -4);
 
     lbl_ldr_raw = lv_label_create(scr);
     lv_label_set_text(lbl_ldr_raw, "LDR: 0000");
     lv_obj_set_style_text_font(lbl_ldr_raw, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_ldr_raw, COL_DIM, 0);
-    lv_obj_align(lbl_ldr_raw, LV_ALIGN_BOTTOM_RIGHT, -8, -6);
+    lv_obj_align(lbl_ldr_raw, LV_ALIGN_BOTTOM_RIGHT, -10, -4);
 }
 
 // ── Update (call every second) ────────────────────────────────────────────────
