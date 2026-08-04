@@ -1,6 +1,7 @@
 #include "manager_led.h"
 #include "pins_config.h"
 #include <Arduino.h>
+#include <math.h>
 
 static constexpr uint32_t LED_FREQ       = 1000;  // Hz
 static constexpr uint8_t  LED_RESOLUTION = 8;     // bits (0–255 duty)
@@ -12,12 +13,22 @@ static uint8_t back_brightness  = 0;
 static bool    front_on         = false;
 static bool    back_on          = false;
 
+static uint8_t gamma_correct(uint8_t brightness) {
+    if (brightness == 0) return 0;
+
+    const float normalized = (float)brightness / 255.0f;
+    int corrected = (int)lroundf(powf(normalized, 2.2f) * 255.0f);
+    if (corrected < 0) corrected = 0;
+    if (corrected > 255) corrected = 255;
+    return (uint8_t)corrected;
+}
+
 static void apply_front() {
-    ledcWrite(CH_FRONT, front_on ? front_brightness : 0);
+    ledcWrite(CH_FRONT, front_on ? gamma_correct(front_brightness) : 0);
 }
 
 static void apply_back() {
-    ledcWrite(CH_BACK, back_on ? back_brightness : 0);
+    ledcWrite(CH_BACK, back_on ? gamma_correct(back_brightness) : 0);
 }
 
 void led_manager_init(uint8_t init_front_brightness, uint8_t init_back_brightness,

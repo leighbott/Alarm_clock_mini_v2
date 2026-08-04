@@ -1,5 +1,6 @@
 #include "manager_brightness.h"
 
+#include "manager_alarm.h"
 #include "manager_storage.h"
 #include "pins_config.h"
 #include "ui_settings_menu.h"
@@ -31,7 +32,9 @@ static uint8_t clamp_with_minimum(uint8_t value) {
 }
 
 static uint8_t map_ldr_to_brightness(float ldr_value) {
-    float normalized = ldr_value / 4095.0f;
+    constexpr float LDR_MAX_RAW = 2500.0f;
+
+    float normalized = ldr_value / LDR_MAX_RAW;
     if (normalized < 0.0f) normalized = 0.0f;
     if (normalized > 1.0f) normalized = 1.0f;
 
@@ -49,6 +52,10 @@ static bool boost_is_active() {
 
 static uint8_t select_target_brightness() {
     const AppSettings &settings = storage_manager_get();
+
+    if (alarm_manager_is_alarm_active()) {
+        return 255;
+    }
 
     if (!settings_menu_is_home()) {
         return clamp_with_minimum(settings.boost_brightness);

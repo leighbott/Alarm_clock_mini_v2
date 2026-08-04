@@ -34,8 +34,8 @@ static uint8_t g_selected_tile = 0;
 static ChildScreen g_children[4] = {
     {nullptr, UiNavState::SETTINGS_TIME_DATE, "Time & Date"},
     {nullptr, UiNavState::SETTINGS_ALARM, "Alarm"},
-    {nullptr, UiNavState::SETTINGS_DISPLAY, "Display"},
     {nullptr, UiNavState::SETTINGS_OTHER, "Other"},
+    {nullptr, UiNavState::SETTINGS_DISPLAY, "Display"},
 };
 
 static void apply_header_base(lv_obj_t *screen, const char *title) {
@@ -143,8 +143,8 @@ static void build_main_settings_screen() {
 
     g_tiles[0] = create_tile(content, x0, y0, "Time & Date", lv_color_make(0x24, 0x9B, 0x3A));
     g_tiles[1] = create_tile(content, x1, y0, "Alarm", lv_color_make(0xB0, 0x22, 0x22));
-    g_tiles[2] = create_tile(content, x0, y1, "Display", lv_color_make(0x1C, 0x5D, 0xB5));
-    g_tiles[3] = create_tile(content, x1, y1, "Other", lv_color_make(0x66, 0x66, 0x66));
+    g_tiles[2] = create_tile(content, x1, y1, "Other", lv_color_make(0x66, 0x66, 0x66));
+    g_tiles[3] = create_tile(content, x0, y1, "Display", lv_color_make(0x1C, 0x5D, 0xB5));
 
     g_selected_tile = 0;
     update_tile_focus();
@@ -257,6 +257,11 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 return;
             }
 
+            if (enc2_pressed) {
+                route_to_home();
+                return;
+            }
+
             if (enc1_delta != 0) {
                 const int8_t direction = (enc1_delta > 0) ? 1 : -1;
                 int32_t steps = (enc1_delta > 0) ? enc1_delta : -enc1_delta;
@@ -272,8 +277,6 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
             if (enc2_delta != 0) {
                 route_to_child(g_selected_tile);
             }
-
-            (void)enc2_pressed; // explicit no-op in main settings
             return;
         }
 
@@ -283,8 +286,10 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 enc2_delta,
                 enc1_pressed,
                 enc2_pressed);
-            if (action != UiTimeDateAction::NONE) {
+            if (action == UiTimeDateAction::CANCEL) {
                 route_to_main_settings();
+            } else if (action == UiTimeDateAction::ACCEPT) {
+                route_to_home();
             }
             return;
         }
@@ -295,8 +300,10 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 enc2_delta,
                 enc1_pressed,
                 enc2_pressed);
-            if (action != UiDisplayAction::NONE) {
+            if (action == UiDisplayAction::CANCEL) {
                 route_to_main_settings();
+            } else if (action == UiDisplayAction::ACCEPT) {
+                route_to_home();
             }
             return;
         }
@@ -307,8 +314,10 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 enc2_delta,
                 enc1_pressed,
                 enc2_pressed);
-            if (action != UiAlarmAction::NONE) {
+            if (action == UiAlarmAction::CANCEL) {
                 route_to_main_settings();
+            } else if (action == UiAlarmAction::ACCEPT) {
+                route_to_home();
             }
             return;
         }

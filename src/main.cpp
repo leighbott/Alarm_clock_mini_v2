@@ -21,7 +21,6 @@
 #define NV3007_GAP_Y        14
 #define NV3007_USE_INVERT   0
 #define NV3007_COLOR_SWAPPED 1
-#define NV3007_BOOT_TEST_MS 700
 
 // ── Backlight (LEDC) ──────────────────────────────────────────────────────────
 static void display_backlight_init(void) {
@@ -77,23 +76,42 @@ static uint8_t *lv_buf2 = nullptr;
 
 static uint32_t lv_tick_cb() { return (uint32_t)millis(); }
 
-static void run_display_boot_test(void)
-{
-    lv_obj_t *scr = lv_screen_active();
-    lv_obj_set_style_bg_color(scr, lv_palette_main(LV_PALETTE_BLUE), 0);
-    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+static void adjust_home_led(bool front_led, int32_t delta) {
+    if (delta == 0) {
+        return;
+    }
 
-    lv_obj_t *lbl = lv_label_create(scr);
-    lv_label_set_text(lbl, "NV3007 BOOT TEST");
-    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
-    lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
+    AppSettings &settings = storage_manager_get();
+    uint8_t *stored_brightness = front_led ? &settings.led_front_brightness
+                                           : &settings.led_back_brightness;
+    bool *stored_enabled = front_led ? &settings.led_front_enabled
+                                     : &settings.led_back_enabled;
+    const bool was_enabled = front_led ? led_manager_is_front_on() : led_manager_is_back_on();
 
-    lv_timer_handler();
-    delay(NV3007_BOOT_TEST_MS);
+    int32_t next = (int32_t)(*stored_brightness) + delta;
+    if (next < 0) next = 0;
+    if (next > 255) next = 255;
 
-    lv_obj_del(lbl);
-    lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
-    lv_timer_handler();
+    *stored_brightness = (uint8_t)next;
+    *stored_enabled = next > 0;
+
+    if (front_led) {
+        led_manager_set_front((uint8_t)next);
+        if (next > 0 && !was_enabled) {
+            led_manager_toggle_front();
+        } else if (next == 0 && was_enabled) {
+            led_manager_toggle_front();
+        }
+    } else {
+        led_manager_set_back((uint8_t)next);
+        if (next > 0 && !was_enabled) {
+            led_manager_toggle_back();
+        } else if (next == 0 && was_enabled) {
+            led_manager_toggle_back();
+        }
+    }
+
+    storage_manager_save_leds();
 }
 
 void setup() {
@@ -159,8 +177,6 @@ void setup() {
                   (unsigned)NV3007_GAP_X, (unsigned)NV3007_GAP_Y,
                   (int)NV3007_USE_INVERT, (int)NV3007_COLOR_SWAPPED);
 
-    run_display_boot_test();
-
     // 5. I2C peripherals
     rtc_manager_init();
     sensor_manager_init();
@@ -179,6 +195,7 @@ void setup() {
     ui_main_screen_init();
     settings_menu_init(ui_main_screen_get_screen());
     alarm_manager_init();
+    lv_screen_load(ui_main_screen_get_screen());
     ui_main_screen_update();
 
     Serial.println("Boot OK");
@@ -222,6 +239,14 @@ void loop() {
             input_manager_button_pressed(ENC1) || input_manager_button_pressed(ENC2);
         if (home_input) {
             brightness_manager_note_home_input();
+        }
+
+        if (enc1_delta != 0) {
+            adjust_home_led(true, enc1_delta);
+        }
+
+        if (enc2_delta != 0) {
+            adjust_home_led(false, enc2_delta);
         }
 
         const bool hold_ready =
