@@ -22,11 +22,15 @@ static void load_alarm() {
     settings.snooze_enabled      = prefs.getBool   ("snz_en",       settings.snooze_enabled);
     settings.snooze_duration_min = prefs.getUShort ("snz_dur",      settings.snooze_duration_min);
     settings.hold_dismiss_sec    = prefs.getUChar  ("hold_sec",     settings.hold_dismiss_sec);
-    settings.repeat_mode         = prefs.getUChar  ("repeat_mode",  settings.repeat_mode);
+    settings.repeat_mode         = prefs.getUChar  ("alm_rep",      settings.repeat_mode);
 
     String mp3 = prefs.getString("alm_mp3", settings.alarm_mp3);
     strncpy(settings.alarm_mp3, mp3.c_str(), sizeof(settings.alarm_mp3) - 1);
     settings.alarm_mp3[sizeof(settings.alarm_mp3) - 1] = '\0';
+    if (settings.alarm_mp3[0] == '\0') {
+        strncpy(settings.alarm_mp3, "/test.mp3", sizeof(settings.alarm_mp3) - 1);
+        settings.alarm_mp3[sizeof(settings.alarm_mp3) - 1] = '\0';
+    }
 }
 
 static void save_alarm() {
@@ -41,7 +45,7 @@ static void save_alarm() {
     prefs.putBool  ("snz_en",       settings.snooze_enabled);
     prefs.putUShort("snz_dur",      settings.snooze_duration_min);
     prefs.putUChar ("hold_sec",     settings.hold_dismiss_sec);
-    prefs.putUChar ("repeat_mode",  settings.repeat_mode);
+    prefs.putUChar ("alm_rep",      settings.repeat_mode);
     prefs.putString("alm_mp3",      settings.alarm_mp3);
 }
 
@@ -79,7 +83,8 @@ void storage_manager_init() {
     settings.alarm_enabled        = false;
     settings.alarm_hour           = 7;
     settings.alarm_minute         = 0;
-    settings.alarm_mp3[0]         = '\0';
+    strncpy(settings.alarm_mp3, "/test.mp3", sizeof(settings.alarm_mp3) - 1);
+    settings.alarm_mp3[sizeof(settings.alarm_mp3) - 1] = '\0';
     settings.alarm_volume         = 80;
     settings.alarm_end_brightness = 200;
     settings.alarm_vol_ramp_min   = 5;
@@ -88,7 +93,7 @@ void storage_manager_init() {
     settings.snooze_enabled       = true;
     settings.snooze_duration_min  = 9;
     settings.hold_dismiss_sec     = 3;
-    settings.repeat_mode          = 1;   // weekdays
+    settings.repeat_mode          = 0x80;   // once
     settings.min_brightness_off   = false;
     settings.manual_brightness    = 128;
     settings.auto_brightness      = true;

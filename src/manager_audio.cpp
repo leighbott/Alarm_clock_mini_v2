@@ -4,11 +4,14 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Audio.h>
+#include <string.h>
 
 static Audio      audio;
 static bool       sd_ok      = false;
 static bool       playing    = false;
 static uint8_t    volume_pct = 0;
+static bool       loop_enabled = false;
+static char       loop_path[64] = {0};
 
 // ── Required library callbacks (must exist even if unused) ────────────────────
 void audio_info(const char *)          {}
@@ -61,9 +64,18 @@ bool audio_manager_init() {
 
 void audio_manager_loop() {
     audio.loop();
+
+    if (loop_enabled && sd_ok && !playing && loop_path[0] != '\0') {
+        audio.connecttoFS(SD, loop_path);
+        audio.setVolume(pct_to_lib(volume_pct));
+        playing = true;
+    }
 }
 
 void audio_manager_play(const char *path) {
+    loop_enabled = false;
+    loop_path[0] = '\0';
+
     if (!sd_ok) {
         audio_manager_play_beep();
         return;
@@ -74,7 +86,39 @@ void audio_manager_play(const char *path) {
     Serial.printf("Audio: playing %s\n", path);
 }
 
+void audio_manager_play_loop(const char *path) {
+    if (!path || path[0] == '\0') {
+        audio_manager_play("/test.mp3");
+        return;
+    }
+
+    strncpy(loop_path, path, sizeof(loop_path) - 1);
+    loop_path[sizeof(loop_path) - 1] = '\0';
+    loop_enabled = true;
+
+    if (!sd_ok) {
+        audio_manager_play_beep();
+        return;
+    }
+
+    if (!SD.exists(loop_path)) {
+        Serial.printf("Audio: loop file missing: %s\n", loop_path);
+        loop_enabled = false;
+        loop_path[0] = '\0';
+        audio_manager_play_beep();
+        return;
+    }
+
+    audio.connecttoFS(SD, loop_path);
+    audio.setVolume(pct_to_lib(volume_pct));
+    playing = true;
+    Serial.printf("Audio: looping %s\n", loop_path);
+}
+
 void audio_manager_play_beep() {
+    loop_enabled = false;
+    loop_path[0] = '\0';
+
     if (sd_ok) {
         audio.connecttoFS(SD, "/beeps/1000hz.wav");
         audio.setVolume(pct_to_lib(volume_pct));
@@ -86,6 +130,8 @@ void audio_manager_play_beep() {
 }
 
 void audio_manager_stop() {
+    loop_enabled = false;
+    loop_path[0] = '\0';
     audio.stopSong();
     playing = false;
 }

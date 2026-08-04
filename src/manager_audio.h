@@ -8,6 +8,7 @@ bool audio_manager_init();          // returns true if SD + audio init OK
 void audio_manager_loop();          // must be called every loop() iteration
 
 void audio_manager_play(const char *path);   // play an MP3 from SD
+void audio_manager_play_loop(const char *path); // play and auto-restart on EOF
 void audio_manager_play_beep();              // play /beeps/1000hz.wav (fallback)
 void audio_manager_stop();
 

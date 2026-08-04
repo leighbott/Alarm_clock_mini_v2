@@ -18,7 +18,7 @@ struct AppSettings {
     bool     snooze_enabled;
     uint16_t snooze_duration_min;    // snooze duration, minutes
     uint8_t  hold_dismiss_sec;       // hold-to-dismiss duration, seconds
-    uint8_t  repeat_mode;            // 0 = once, 1 = weekdays
+    uint8_t  repeat_mode;            // bit7=once, bit0..6=Sun..Sat
 
     // Display
     bool     min_brightness_off;     // true = screen off at minimum, false = value 1

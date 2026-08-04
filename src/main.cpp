@@ -9,6 +9,7 @@
 #include "manager_led.h"
 #include "manager_audio.h"
 #include "manager_brightness.h"
+#include "manager_alarm.h"
 #include "ui_main_screen.h"
 #include "ui_settings_menu.h"
 
@@ -177,6 +178,7 @@ void setup() {
     // 8. Main screen
     ui_main_screen_init();
     settings_menu_init(ui_main_screen_get_screen());
+    alarm_manager_init();
     ui_main_screen_update();
 
     Serial.println("Boot OK");
@@ -199,6 +201,20 @@ void loop() {
     static bool hold_open_latched = false;
     const bool enc1_held = input_manager_button_held(ENC1);
     const bool enc2_held = input_manager_button_held(ENC2);
+
+    static uint32_t last_alarm_check_ms = 0;
+    if (millis() - last_alarm_check_ms >= 1000) {
+        last_alarm_check_ms = millis();
+        alarm_manager_check_trigger();
+    }
+
+    if (alarm_manager_is_alarm_active()) {
+        alarm_manager_update(enc1_held, enc2_held);
+        brightness_manager_update();
+        lv_task_handler();
+        delay(5);
+        return;
+    }
 
     if (settings_menu_is_home()) {
         const bool home_input =
@@ -226,6 +242,7 @@ void loop() {
     }
 
     brightness_manager_update();
+    alarm_manager_update(enc1_held, enc2_held);
 
     if (hold_open_latched && !enc1_held && !enc2_held) {
         hold_open_latched = false;

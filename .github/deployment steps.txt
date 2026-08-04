@@ -54,12 +54,12 @@ Stage 13 — Time & Date Menu
 src/ui_time_date_menu — infinite scroll wheels (Hour, Minute, Day, Month, Year). Accept writes to RTC.
 Verification: Change time, accept, RTC updated
 
-
-
-
 Stage 14 — Display Settings Menu
 Part of src/ui_other_settings_menu — min brightness toggle, auto-brightness on/off, boost value. Saves to NVS.
 Verification: Toggle auto-brightness, behaviour changes on main screen
+
+
+
 
 Phase 4 — Alarm System
 Stage 15 — Alarm Manager (Core Logic)
