@@ -208,7 +208,7 @@ void loop() {
         alarm_manager_check_trigger();
     }
 
-    if (alarm_manager_is_alarm_active()) {
+    if (alarm_manager_is_alarm_active() || alarm_manager_is_alarm_screen_visible()) {
         alarm_manager_update(enc1_held, enc2_held);
         brightness_manager_update();
         lv_task_handler();

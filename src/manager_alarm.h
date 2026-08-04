@@ -20,3 +20,4 @@ void alarm_manager_update(bool enc1_held, bool enc2_held);
 
 AlarmState alarm_manager_get_state();
 bool alarm_manager_is_alarm_active();
+bool alarm_manager_is_alarm_screen_visible();

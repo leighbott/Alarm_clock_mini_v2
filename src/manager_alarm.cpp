@@ -23,6 +23,7 @@ static uint32_t g_ramp_start_ms = 0;
 static uint32_t g_active_start_ms = 0;
 static uint32_t g_last_match_stamp = 0;
 static uint32_t g_snooze_until_epoch = 0;
+static constexpr uint32_t TAP_SNOOZE_MS = 300U;
 
 static bool g_any_btn_prev_held = false;
 static uint32_t g_press_start_ms = 0;
@@ -92,7 +93,8 @@ static void stop_alarm(bool return_home) {
     audio_manager_stop();
     restore_pre_alarm_outputs();
 
-    g_state = AlarmState::ARMED;
+    const AppSettings &s = storage_manager_get();
+    g_state = s.alarm_enabled ? AlarmState::ARMED : AlarmState::IDLE;
     g_any_btn_prev_held = false;
     g_hold_dismiss_latched = false;
     ui_alarm_active_window_set_hold_progress(0.0f);
@@ -151,23 +153,26 @@ void alarm_manager_init() {
 
 void alarm_manager_check_trigger() {
     AppSettings &s = storage_manager_get();
-
-    if (!s.alarm_enabled) {
-        g_state = AlarmState::IDLE;
-        return;
-    }
-
-    if (g_state == AlarmState::IDLE) {
-        g_state = AlarmState::ARMED;
-    }
-
     DateTime now = rtc_manager_get_time();
 
+    // Snooze re-trigger is part of an already-started alarm flow and should work
+    // even when a one-time alarm has disabled future scheduling.
     if (g_state == AlarmState::SNOOZING) {
         if (now.unixtime() >= g_snooze_until_epoch) {
             trigger_alarm_now();
         }
         return;
+    }
+
+    if (!s.alarm_enabled) {
+        if (g_state == AlarmState::IDLE || g_state == AlarmState::ARMED) {
+            g_state = AlarmState::IDLE;
+        }
+        return;
+    }
+
+    if (g_state == AlarmState::IDLE) {
+        g_state = AlarmState::ARMED;
     }
 
     if (g_state != AlarmState::ARMED) {
@@ -242,8 +247,20 @@ void alarm_manager_update(bool enc1_held, bool enc2_held) {
     if (any_held) {
         const uint32_t held_ms = now_ms - g_press_start_ms;
         const uint32_t hold_target_ms = (uint32_t)clamp_u8(s.hold_dismiss_sec, 1, 10) * 1000U;
-        const float progress = (hold_target_ms == 0) ? 1.0f
-            : ((held_ms >= hold_target_ms) ? 1.0f : (float)held_ms / (float)hold_target_ms);
+
+        // Reserve the first 300 ms for tap-to-snooze; progress starts after that.
+        float progress = 0.0f;
+        if (held_ms > TAP_SNOOZE_MS) {
+            if (hold_target_ms <= TAP_SNOOZE_MS) {
+                progress = 1.0f;
+            } else {
+                const uint32_t fill_window_ms = hold_target_ms - TAP_SNOOZE_MS;
+                const uint32_t fill_elapsed_ms = held_ms - TAP_SNOOZE_MS;
+                progress = (fill_elapsed_ms >= fill_window_ms)
+                    ? 1.0f
+                    : (float)fill_elapsed_ms / (float)fill_window_ms;
+            }
+        }
         ui_alarm_active_window_set_hold_progress(progress);
 
         if (!g_hold_dismiss_latched && held_ms >= hold_target_ms) {
@@ -257,8 +274,8 @@ void alarm_manager_update(bool enc1_held, bool enc2_held) {
         const uint32_t held_ms = now_ms - g_press_start_ms;
         ui_alarm_active_window_set_hold_progress(0.0f);
 
-        // Tap-to-snooze if quick release and snooze enabled.
-        if (!g_hold_dismiss_latched && s.snooze_enabled && held_ms <= 300U) {
+        // Quick release snoozes; longer-than-tap hold releases just reset the progress ring.
+        if (!g_hold_dismiss_latched && held_ms < TAP_SNOOZE_MS) {
             audio_manager_stop();
             restore_pre_alarm_outputs();
             g_state = AlarmState::SNOOZING;
@@ -278,4 +295,9 @@ AlarmState alarm_manager_get_state() {
 
 bool alarm_manager_is_alarm_active() {
     return g_state == AlarmState::RAMP_UP || g_state == AlarmState::ACTIVE;
+}
+
+bool alarm_manager_is_alarm_screen_visible() {
+    lv_obj_t *alarm_screen = ui_alarm_active_window_get_screen();
+    return alarm_screen && lv_screen_active() == alarm_screen;
 }

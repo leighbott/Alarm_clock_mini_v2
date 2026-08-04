@@ -42,30 +42,35 @@ static LvEncData lv_enc2_data = { &enc2, &enc2_last, &btn2 };
 
 // ── Debounce helper ───────────────────────────────────────────────────────────
 static constexpr uint32_t DEBOUNCE_MS = 20;
+static uint32_t g_pending_since_ms[2] = {0, 0};
+static bool g_pending_level[2] = {false, false};
 
 static void update_button(ButtonState &b) {
+    const uint8_t idx = (&b == &btn1) ? 0 : 1;
     bool raw = (digitalRead(b.pin) == LOW); // active LOW
-    if (raw != b.last_raw) {
-        // Wait for debounce
-        static uint32_t pending_time[2] = {0, 0};
-        uint8_t idx = (&b == &btn1) ? 0 : 1;
-        if (pending_time[idx] == 0) {
-            pending_time[idx] = millis();
-        }
-        if (millis() - pending_time[idx] >= DEBOUNCE_MS) {
-            b.last_raw = raw;
-            pending_time[idx] = 0;
-            if (raw) { // press edge
-                b.pressed_flag = true;
-                b.press_time   = millis();
-            }
-        }
-    } else {
-        uint8_t idx = (&b == &btn1) ? 0 : 1;
-        static uint32_t pending_time_clear[2] = {0, 0};
-        pending_time_clear[idx] = 0; // reset pending if stable
-        (void)pending_time_clear; // suppress unused warning
+
+    if (raw == b.last_raw) {
+        g_pending_since_ms[idx] = 0;
+        b.held = b.last_raw;
+        return;
     }
+
+    if (g_pending_since_ms[idx] == 0 || g_pending_level[idx] != raw) {
+        g_pending_level[idx] = raw;
+        g_pending_since_ms[idx] = millis();
+        b.held = b.last_raw;
+        return;
+    }
+
+    if ((uint32_t)(millis() - g_pending_since_ms[idx]) >= DEBOUNCE_MS) {
+        b.last_raw = raw;
+        g_pending_since_ms[idx] = 0;
+        if (raw) { // press edge
+            b.pressed_flag = true;
+            b.press_time = millis();
+        }
+    }
+
     b.held = b.last_raw;
 }
 
