@@ -17,6 +17,8 @@ static lv_obj_t *g_lbl_date = nullptr;
 static lv_obj_t *g_circle = nullptr;
 static lv_obj_t *g_arc = nullptr;
 static lv_obj_t *g_lbl_hint = nullptr;
+static bool g_colon_visible = true;
+static uint32_t g_last_clock_second = 0;
 
 static const char *ordinal(uint8_t d) {
     if (d >= 11 && d <= 13) return "th";
@@ -43,15 +45,14 @@ static const char *month_name(uint8_t m) {
     return (m >= 1 && m <= 12) ? months[m] : "---";
 }
 
-static void update_time_date() {
+static void update_time_date(const DateTime &now) {
     if (!g_lbl_time || !g_lbl_ampm || !g_lbl_date) return;
 
-    DateTime now = rtc_manager_get_time();
     uint8_t h12 = now.hour() % 12;
     if (h12 == 0) h12 = 12;
 
     char buf[64];
-    std::snprintf(buf, sizeof(buf), "%u:%02u", h12, (unsigned)now.minute());
+    std::snprintf(buf, sizeof(buf), g_colon_visible ? "%u:%02u" : "%u %02u", h12, (unsigned)now.minute());
     lv_label_set_text(g_lbl_time, buf);
     lv_label_set_text(g_lbl_ampm, (now.hour() >= 12) ? "PM" : "AM");
 
@@ -61,6 +62,11 @@ static void update_time_date() {
                   ordinal((uint8_t)now.day()),
                   month_name((uint8_t)now.month()));
     lv_label_set_text(g_lbl_date, buf);
+}
+
+static void update_time_date() {
+    DateTime now = rtc_manager_get_time();
+    update_time_date(now);
 }
 
 } // namespace
@@ -143,11 +149,15 @@ void ui_alarm_active_window_init() {
     lv_obj_set_style_text_align(g_lbl_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(g_lbl_hint);
 
+    g_last_clock_second = rtc_manager_get_time().unixtime();
+    g_colon_visible = true;
     update_time_date();
 }
 
 void ui_alarm_active_window_show() {
     if (!g_screen) ui_alarm_active_window_init();
+    g_last_clock_second = 0;
+    g_colon_visible = true;
     update_time_date();
     lv_screen_load(g_screen);
 }
@@ -171,7 +181,18 @@ void ui_alarm_active_window_set_hold_progress(float progress_0_to_1) {
 
     const int value = (int)(progress_0_to_1 * 100.0f + 0.5f);
     lv_arc_set_value(g_arc, value);
-    update_time_date();
+}
+
+void ui_alarm_active_window_update_clock() {
+    if (!g_screen || lv_screen_active() != g_screen) return;
+
+    DateTime now = rtc_manager_get_time();
+    const uint32_t now_second = now.unixtime();
+    if (now_second == g_last_clock_second) return;
+
+    g_last_clock_second = now_second;
+    g_colon_visible = !g_colon_visible;
+    update_time_date(now);
 }
 
 lv_obj_t *ui_alarm_active_window_get_screen() {

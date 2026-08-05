@@ -1,5 +1,6 @@
 #pragma once
 
+#include <RTClib.h>
 #include <stdint.h>
 
 enum class AlarmState : uint8_t {
@@ -21,3 +22,4 @@ void alarm_manager_update(bool enc1_held, bool enc2_held);
 AlarmState alarm_manager_get_state();
 bool alarm_manager_is_alarm_active();
 bool alarm_manager_is_alarm_screen_visible();
+bool alarm_manager_get_next_alarm_time(const DateTime &now, DateTime *out_time, bool *out_is_snoozed);

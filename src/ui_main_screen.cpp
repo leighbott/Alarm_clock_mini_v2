@@ -1,4 +1,5 @@
 #include "ui_main_screen.h"
+#include "manager_alarm.h"
 #include "manager_brightness.h"
 #include "manager_rtc.h"
 #include "manager_sensor.h"
@@ -53,6 +54,10 @@ static const char *month_name(uint8_t m) {
         "Jul","Aug","Sep","Oct","Nov","Dec"
     };
     return (m >= 1 && m <= 12) ? months[m] : "---";
+}
+
+static bool is_same_calendar_day(const DateTime &a, const DateTime &b) {
+    return a.year() == b.year() && a.month() == b.month() && a.day() == b.day();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -180,22 +185,26 @@ void ui_main_screen_update() {
         lv_label_set_text(lbl_date, buf);
 
         // ── Alarm & time-until ────────────────────────────────────────────────
-        const AppSettings &s = storage_manager_get();
-        if (s.alarm_enabled) {
-            snprintf(buf, sizeof(buf), "Alarm  %02d:%02d", s.alarm_hour, s.alarm_minute);
+        DateTime next_alarm;
+        bool is_snoozed = false;
+        if (alarm_manager_get_next_alarm_time(now, &next_alarm, &is_snoozed)) {
+            snprintf(buf, sizeof(buf), "Alarm  %02d:%02d", next_alarm.hour(), next_alarm.minute());
             lv_label_set_text(lbl_alarm, buf);
             lv_obj_set_style_text_color(lbl_alarm, COL_ACCENT, 0);
 
-            // Calculate minutes until alarm
-            int32_t now_mins   = now.hour()     * 60 + now.minute();
-            int32_t alarm_mins = s.alarm_hour   * 60 + s.alarm_minute;
-            int32_t diff       = alarm_mins - now_mins;
-            if (diff <= 0) diff += 24 * 60;
-
-            int32_t h = diff / 60;
-            int32_t m = diff % 60;
-            if (h > 0) snprintf(buf, sizeof(buf), "in %ldh %ldm", h, m);
-            else        snprintf(buf, sizeof(buf), "in %ldm",          m);
+            if (!is_snoozed && !is_same_calendar_day(now, next_alarm)) {
+                snprintf(buf, sizeof(buf), "on %s", day_name(next_alarm.dayOfTheWeek()));
+            } else {
+                uint32_t diff_seconds = 0;
+                if (next_alarm.unixtime() > now.unixtime()) {
+                    diff_seconds = next_alarm.unixtime() - now.unixtime();
+                }
+                const uint32_t diff_minutes = (diff_seconds + 59U) / 60U;
+                const uint32_t h = diff_minutes / 60U;
+                const uint32_t m = diff_minutes % 60U;
+                if (h > 0U) snprintf(buf, sizeof(buf), "in %luh %lum", (unsigned long)h, (unsigned long)m);
+                else        snprintf(buf, sizeof(buf), "in %lum",       (unsigned long)m);
+            }
             lv_label_set_text(lbl_until, buf);
         } else {
             lv_label_set_text(lbl_alarm, "Alarm  OFF");
