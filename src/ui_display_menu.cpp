@@ -15,18 +15,63 @@ static constexpr int COL_COUNT = 4;
 static constexpr int CONTENT_PAD_X = 6;
 static constexpr int CONTENT_GAP_X = 4;
 static constexpr int COL_W = (DISP_W - (2 * CONTENT_PAD_X) - ((COL_COUNT - 1) * CONTENT_GAP_X)) / COL_COUNT;
-static constexpr int TITLE_H = 28;
+static constexpr int TITLE_H = 34;
 static constexpr int VALUE_W = 84;
 static constexpr int VALUE_H = 70;
 static constexpr int VALUE_Y = 32;
 
 static lv_obj_t *g_screen = nullptr;
+static lv_obj_t *g_header_cancel_bg = nullptr;
+static lv_obj_t *g_header_accept_bg = nullptr;
+static lv_timer_t *g_header_flash_timer = nullptr;
+static lv_timer_t *g_pending_action_timer = nullptr;
+static UiDisplayAction g_pending_action = UiDisplayAction::NONE;
+static UiDisplayAction g_deferred_action = UiDisplayAction::NONE;
 static lv_obj_t *g_value_widgets[COL_COUNT] = {nullptr, nullptr, nullptr, nullptr};
 static lv_obj_t *g_toggle_labels[2] = {nullptr, nullptr};
+static lv_obj_t *g_toggle_widgets[2] = {nullptr, nullptr};
 static lv_obj_t *g_arc_widgets[2] = {nullptr, nullptr};
 static lv_obj_t *g_arc_labels[2] = {nullptr, nullptr};
 
 static UiDisplayState g_state = {false, 50, true, 78, UiDisplayField::MIN_BRIGHTNESS};
+
+static void hide_header_flash() {
+    if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
+    if (g_header_accept_bg) lv_obj_set_style_bg_opa(g_header_accept_bg, LV_OPA_TRANSP, 0);
+}
+
+static void header_flash_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    hide_header_flash();
+    g_header_flash_timer = nullptr;
+}
+
+static void trigger_header_flash(bool accept) {
+    hide_header_flash();
+    if (accept) {
+        if (g_header_accept_bg) lv_obj_set_style_bg_opa(g_header_accept_bg, LV_OPA_COVER, 0);
+    } else {
+        if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_COVER, 0);
+    }
+
+    if (g_header_flash_timer) lv_timer_del(g_header_flash_timer);
+    g_header_flash_timer = lv_timer_create(header_flash_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_header_flash_timer, 1);
+}
+
+static void pending_action_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    g_pending_action_timer = nullptr;
+    g_pending_action = g_deferred_action;
+    g_deferred_action = UiDisplayAction::NONE;
+}
+
+static void queue_action_after_flash(UiDisplayAction action) {
+    g_deferred_action = action;
+    if (g_pending_action_timer) lv_timer_del(g_pending_action_timer);
+    g_pending_action_timer = lv_timer_create(pending_action_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_pending_action_timer, 1);
+}
 
 static uint8_t selected_index() {
     return (uint8_t)g_state.selected_field;
@@ -87,11 +132,21 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_style_pad_right(header, 2, 0);
     lv_obj_set_scrollable(header, false);
 
-    lv_obj_t *lbl_cancel = lv_label_create(header);
+    lv_obj_t *cancel_bg = lv_obj_create(header);
+    lv_obj_set_size(cancel_bg, 96, 24);
+    lv_obj_align(cancel_bg, LV_ALIGN_LEFT_MID, 6, 0);
+    lv_obj_set_style_bg_color(cancel_bg, lv_color_make(0xB0, 0x20, 0x20), 0);
+    lv_obj_set_style_bg_opa(cancel_bg, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(cancel_bg, 4, 0);
+    lv_obj_set_style_border_width(cancel_bg, 0, 0);
+    lv_obj_set_style_pad_all(cancel_bg, 0, 0);
+    lv_obj_set_scrollable(cancel_bg, false);
+
+    lv_obj_t *lbl_cancel = lv_label_create(cancel_bg);
     lv_label_set_text(lbl_cancel, "Cancel");
     lv_obj_set_style_text_font(lbl_cancel, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_cancel, lv_color_white(), 0);
-    lv_obj_align(lbl_cancel, LV_ALIGN_LEFT_MID, 10, 0);
+    lv_obj_center(lbl_cancel);
     lv_obj_set_clickable(lbl_cancel, false);
     lv_obj_set_click_focusable(lbl_cancel, false);
 
@@ -103,13 +158,26 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_clickable(lbl_title, false);
     lv_obj_set_click_focusable(lbl_title, false);
 
-    lv_obj_t *lbl_accept = lv_label_create(header);
+    lv_obj_t *accept_bg = lv_obj_create(header);
+    lv_obj_set_size(accept_bg, 96, 24);
+    lv_obj_align(accept_bg, LV_ALIGN_RIGHT_MID, -6, 0);
+    lv_obj_set_style_bg_color(accept_bg, lv_color_make(0x00, 0x9A, 0x3A), 0);
+    lv_obj_set_style_bg_opa(accept_bg, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(accept_bg, 4, 0);
+    lv_obj_set_style_border_width(accept_bg, 0, 0);
+    lv_obj_set_style_pad_all(accept_bg, 0, 0);
+    lv_obj_set_scrollable(accept_bg, false);
+
+    lv_obj_t *lbl_accept = lv_label_create(accept_bg);
     lv_label_set_text(lbl_accept, "Accept");
     lv_obj_set_style_text_font(lbl_accept, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_accept, lv_color_white(), 0);
-    lv_obj_align(lbl_accept, LV_ALIGN_RIGHT_MID, -10, 0);
+    lv_obj_center(lbl_accept);
     lv_obj_set_clickable(lbl_accept, false);
     lv_obj_set_click_focusable(lbl_accept, false);
+
+    g_header_cancel_bg = cancel_bg;
+    g_header_accept_bg = accept_bg;
 }
 
 static lv_obj_t *create_value_shell(lv_obj_t *parent, int x) {
@@ -151,10 +219,14 @@ static void update_widgets() {
 
     if (g_toggle_labels[1]) {
         lv_label_set_text(g_toggle_labels[1], g_state.auto_brightness ? "ON" : "OFF");
-        lv_obj_set_style_text_color(g_toggle_labels[1],
-                                    g_state.auto_brightness ? lv_color_make(0x00, 0x9A, 0x3A)
-                                                            : lv_color_make(0xB0, 0x20, 0x20),
-                                    0);
+        lv_obj_set_style_text_color(g_toggle_labels[1], lv_color_white(), 0);
+    }
+
+    if (g_toggle_widgets[1]) {
+        lv_obj_set_style_bg_color(g_toggle_widgets[1],
+                                  g_state.auto_brightness ? lv_color_make(0x00, 0x9A, 0x3A)
+                                                          : lv_color_make(0xB0, 0x20, 0x20),
+                                  LV_PART_MAIN);
     }
 
     char buf[8];
@@ -241,7 +313,7 @@ static lv_obj_t *create_column(lv_obj_t *parent,
     lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(title_label, lv_color_make(0xD0, 0xD0, 0xD0), 0);
     lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, -4);
+    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_clickable(title_label, false);
     lv_obj_set_click_focusable(title_label, false);
 
@@ -286,6 +358,7 @@ static lv_obj_t *create_column(lv_obj_t *parent,
         lv_obj_set_clickable(value_label, false);
         lv_obj_set_click_focusable(value_label, false);
         g_toggle_labels[toggle_idx] = value_label;
+        g_toggle_widgets[toggle_idx] = widget;
     }
 
     return col;
@@ -339,8 +412,20 @@ UiDisplayAction ui_display_handle_inputs(int32_t enc1_delta,
                                          int32_t enc2_delta,
                                          bool enc1_pressed,
                                          bool enc2_pressed) {
+    if (g_pending_action != UiDisplayAction::NONE) {
+        UiDisplayAction out = g_pending_action;
+        g_pending_action = UiDisplayAction::NONE;
+        return out;
+    }
+
+    if (g_pending_action_timer) {
+        return UiDisplayAction::NONE;
+    }
+
     if (enc1_pressed) {
-        return UiDisplayAction::CANCEL;
+        trigger_header_flash(false);
+        queue_action_after_flash(UiDisplayAction::CANCEL);
+        return UiDisplayAction::NONE;
     }
 
     if (enc1_delta != 0) {
@@ -361,8 +446,10 @@ UiDisplayAction ui_display_handle_inputs(int32_t enc1_delta,
     update_widgets();
 
     if (enc2_pressed) {
+        trigger_header_flash(true);
         save_state_to_storage();
-        return UiDisplayAction::ACCEPT;
+        queue_action_after_flash(UiDisplayAction::ACCEPT);
+        return UiDisplayAction::NONE;
     }
 
     return UiDisplayAction::NONE;

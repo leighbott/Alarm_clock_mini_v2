@@ -42,11 +42,54 @@ struct TimePickerState {
 };
 
 static lv_obj_t *g_screen = nullptr;
+static lv_obj_t *g_header_cancel_bg = nullptr;
+static lv_obj_t *g_header_accept_bg = nullptr;
+static lv_timer_t *g_header_flash_timer = nullptr;
+static lv_timer_t *g_pending_action_timer = nullptr;
+static UiTimeDateAction g_pending_action = UiTimeDateAction::NONE;
+static UiTimeDateAction g_deferred_action = UiTimeDateAction::NONE;
 static lv_obj_t *g_value_widgets[FIELD_COUNT] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 static lv_obj_t *g_arc_widgets[FIELD_COUNT] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 static lv_obj_t *g_value_labels[FIELD_COUNT] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 
 static TimePickerState g_state = {0, 0, 1, 1, YEAR_MIN, TimeField::HOUR};
+
+static void hide_header_flash() {
+    if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
+    if (g_header_accept_bg) lv_obj_set_style_bg_opa(g_header_accept_bg, LV_OPA_TRANSP, 0);
+}
+
+static void header_flash_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    hide_header_flash();
+    g_header_flash_timer = nullptr;
+}
+
+static void trigger_header_flash(bool accept) {
+    hide_header_flash();
+    if (accept) {
+        if (g_header_accept_bg) lv_obj_set_style_bg_opa(g_header_accept_bg, LV_OPA_COVER, 0);
+    } else {
+        if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_COVER, 0);
+    }
+    if (g_header_flash_timer) lv_timer_del(g_header_flash_timer);
+    g_header_flash_timer = lv_timer_create(header_flash_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_header_flash_timer, 1);
+}
+
+static void pending_action_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    g_pending_action_timer = nullptr;
+    g_pending_action = g_deferred_action;
+    g_deferred_action = UiTimeDateAction::NONE;
+}
+
+static void queue_action_after_flash(UiTimeDateAction action) {
+    g_deferred_action = action;
+    if (g_pending_action_timer) lv_timer_del(g_pending_action_timer);
+    g_pending_action_timer = lv_timer_create(pending_action_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_pending_action_timer, 1);
+}
 
 static bool is_leap_year(uint16_t year) {
     return ((year % 4U) == 0U && (year % 100U) != 0U) || ((year % 400U) == 0U);
@@ -235,11 +278,21 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_style_pad_right(header, 2, 0);
     lv_obj_set_scrollable(header, false);
 
-    lv_obj_t *lbl_cancel = lv_label_create(header);
+    lv_obj_t *cancel_bg = lv_obj_create(header);
+    lv_obj_set_size(cancel_bg, 96, 24);
+    lv_obj_align(cancel_bg, LV_ALIGN_LEFT_MID, 6, 0);
+    lv_obj_set_style_bg_color(cancel_bg, lv_color_make(0xB0, 0x20, 0x20), 0);
+    lv_obj_set_style_bg_opa(cancel_bg, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(cancel_bg, 4, 0);
+    lv_obj_set_style_border_width(cancel_bg, 0, 0);
+    lv_obj_set_style_pad_all(cancel_bg, 0, 0);
+    lv_obj_set_scrollable(cancel_bg, false);
+
+    lv_obj_t *lbl_cancel = lv_label_create(cancel_bg);
     lv_label_set_text(lbl_cancel, "Cancel");
     lv_obj_set_style_text_font(lbl_cancel, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_cancel, lv_color_white(), 0);
-    lv_obj_align(lbl_cancel, LV_ALIGN_LEFT_MID, 10, 0);
+    lv_obj_center(lbl_cancel);
     lv_obj_set_clickable(lbl_cancel, false);
     lv_obj_set_click_focusable(lbl_cancel, false);
 
@@ -251,13 +304,26 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_clickable(lbl_title, false);
     lv_obj_set_click_focusable(lbl_title, false);
 
-    lv_obj_t *lbl_accept = lv_label_create(header);
+    lv_obj_t *accept_bg = lv_obj_create(header);
+    lv_obj_set_size(accept_bg, 96, 24);
+    lv_obj_align(accept_bg, LV_ALIGN_RIGHT_MID, -6, 0);
+    lv_obj_set_style_bg_color(accept_bg, lv_color_make(0x00, 0x9A, 0x3A), 0);
+    lv_obj_set_style_bg_opa(accept_bg, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(accept_bg, 4, 0);
+    lv_obj_set_style_border_width(accept_bg, 0, 0);
+    lv_obj_set_style_pad_all(accept_bg, 0, 0);
+    lv_obj_set_scrollable(accept_bg, false);
+
+    lv_obj_t *lbl_accept = lv_label_create(accept_bg);
     lv_label_set_text(lbl_accept, "Accept");
     lv_obj_set_style_text_font(lbl_accept, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_accept, lv_color_white(), 0);
-    lv_obj_align(lbl_accept, LV_ALIGN_RIGHT_MID, -10, 0);
+    lv_obj_center(lbl_accept);
     lv_obj_set_clickable(lbl_accept, false);
     lv_obj_set_click_focusable(lbl_accept, false);
+
+    g_header_cancel_bg = cancel_bg;
+    g_header_accept_bg = accept_bg;
 }
 
 static lv_obj_t *create_value_shell(lv_obj_t *parent, int x) {
@@ -384,11 +450,24 @@ UiTimeDateAction ui_time_date_handle_inputs(int32_t enc1_delta,
                                             int32_t enc2_delta,
                                             bool enc1_pressed,
                                             bool enc2_pressed) {
+    if (g_pending_action != UiTimeDateAction::NONE) {
+        UiTimeDateAction out = g_pending_action;
+        g_pending_action = UiTimeDateAction::NONE;
+        return out;
+    }
+
+    if (g_pending_action_timer) {
+        return UiTimeDateAction::NONE;
+    }
+
     if (enc1_pressed) {
-        return UiTimeDateAction::CANCEL;
+        trigger_header_flash(false);
+        queue_action_after_flash(UiTimeDateAction::CANCEL);
+        return UiTimeDateAction::NONE;
     }
 
     if (enc2_pressed) {
+        trigger_header_flash(true);
         clamp_state(g_state);
         const DateTime new_dt(
             g_state.year,
@@ -398,7 +477,8 @@ UiTimeDateAction ui_time_date_handle_inputs(int32_t enc1_delta,
             g_state.minute,
             0);
         rtc_manager_set_time(new_dt);
-        return UiTimeDateAction::ACCEPT;
+        queue_action_after_flash(UiTimeDateAction::ACCEPT);
+        return UiTimeDateAction::NONE;
     }
 
     if (enc1_delta != 0) {

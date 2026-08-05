@@ -25,10 +25,10 @@ static constexpr int CONTENT_GAP_X = 4;
 static constexpr int MAIN_COL_START_X = CONTENT_PAD_X + PAGE_DOT_W;
 static constexpr int MAIN_COL_AVAILABLE_W = DISP_W - MAIN_COL_START_X - CONTENT_PAD_X;
 static constexpr int COL_W = (MAIN_COL_AVAILABLE_W - ((VISIBLE_COLS - 1) * CONTENT_GAP_X)) / VISIBLE_COLS;
-static constexpr int TITLE_H = 28;
+static constexpr int TITLE_H = 34;
 static constexpr int VALUE_W = 90;
 static constexpr int VALUE_H = 68;
-static constexpr int VALUE_Y = 32;
+static constexpr int VALUE_Y = 36;
 
 static constexpr uint8_t BROWSER_MAX_ENTRIES = 24;
 static constexpr uint8_t BROWSER_VISIBLE_ROWS = 5;
@@ -76,6 +76,13 @@ struct SoundBrowserState {
 };
 
 static lv_obj_t *g_screen = nullptr;
+static lv_obj_t *g_alarm_header_cancel_bg = nullptr;
+static lv_obj_t *g_alarm_header_accept_bg = nullptr;
+static lv_obj_t *g_repeat_header_cancel_bg = nullptr;
+static lv_obj_t *g_repeat_header_accept_bg = nullptr;
+static lv_obj_t *g_sound_header_cancel_bg = nullptr;
+static lv_obj_t *g_sound_header_accept_bg = nullptr;
+static lv_timer_t *g_header_flash_timer = nullptr;
 static lv_obj_t *g_value_widgets[VISIBLE_COLS] = {nullptr};
 static lv_obj_t *g_title_labels[VISIBLE_COLS] = {nullptr};
 static lv_obj_t *g_value_labels[VISIBLE_COLS] = {nullptr};
@@ -95,12 +102,94 @@ static lv_obj_t *g_sound_rows[BROWSER_VISIBLE_ROWS] = {nullptr};
 static lv_obj_t *g_sound_row_labels[BROWSER_VISIBLE_ROWS] = {nullptr};
 static lv_obj_t *g_sound_hint_label = nullptr;
 static SoundBrowserState g_sound_state = {};
+static lv_timer_t *g_sound_accept_timer = nullptr;
+static bool g_sound_accept_pending = false;
+static UiAlarmAction g_pending_action = UiAlarmAction::NONE;
+static lv_timer_t *g_pending_action_timer = nullptr;
+static UiAlarmAction g_deferred_action = UiAlarmAction::NONE;
 
 static UiAlarmState g_state = {
     false, 7, 0, 80, 78, 5, 20, true, 9, 3, REPEAT_ONCE, "/test.mp3", AlarmField::ENABLED
 };
 
 static uint8_t g_window_start = 0;
+
+static void close_sound_window(bool apply_changes);
+
+static lv_obj_t *current_cancel_bg() {
+    if (g_sound_state.open) return g_sound_header_cancel_bg;
+    if (g_repeat_open) return g_repeat_header_cancel_bg;
+    return g_alarm_header_cancel_bg;
+}
+
+static lv_obj_t *current_accept_bg() {
+    if (g_sound_state.open) return g_sound_header_accept_bg;
+    if (g_repeat_open) return g_repeat_header_accept_bg;
+    return g_alarm_header_accept_bg;
+}
+
+static void hide_header_flash() {
+    lv_obj_t *cancel_bg = current_cancel_bg();
+    lv_obj_t *accept_bg = current_accept_bg();
+    if (cancel_bg) {
+        lv_obj_set_style_bg_opa(cancel_bg, LV_OPA_TRANSP, 0);
+    }
+    if (accept_bg) {
+        lv_obj_set_style_bg_opa(accept_bg, LV_OPA_TRANSP, 0);
+    }
+}
+
+static void header_flash_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    hide_header_flash();
+    g_header_flash_timer = nullptr;
+}
+
+static void trigger_header_flash(bool accept) {
+    hide_header_flash();
+    lv_obj_t *cancel_bg = current_cancel_bg();
+    lv_obj_t *accept_bg = current_accept_bg();
+    if (accept) {
+        if (accept_bg) lv_obj_set_style_bg_opa(accept_bg, LV_OPA_COVER, 0);
+    } else {
+        if (cancel_bg) lv_obj_set_style_bg_opa(cancel_bg, LV_OPA_COVER, 0);
+    }
+
+    if (g_header_flash_timer) {
+        lv_timer_del(g_header_flash_timer);
+    }
+    g_header_flash_timer = lv_timer_create(header_flash_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_header_flash_timer, 1);
+}
+
+static void pending_action_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    g_pending_action_timer = nullptr;
+    g_pending_action = g_deferred_action;
+    g_deferred_action = UiAlarmAction::NONE;
+}
+
+static void queue_action_after_flash(UiAlarmAction action) {
+    g_deferred_action = action;
+    if (g_pending_action_timer) {
+        lv_timer_del(g_pending_action_timer);
+    }
+    g_pending_action_timer = lv_timer_create(pending_action_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_pending_action_timer, 1);
+}
+
+static void sound_accept_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    if (!g_sound_state.open || !g_sound_accept_pending) {
+        g_sound_accept_timer = nullptr;
+        g_sound_accept_pending = false;
+        return;
+    }
+
+    g_sound_accept_timer = nullptr;
+    g_sound_accept_pending = false;
+    close_sound_window(true);
+}
 
 static uint8_t clamp_u8(uint8_t v, uint8_t lo, uint8_t hi) {
     if (v < lo) return lo;
@@ -129,6 +218,19 @@ static const char *basename_from_path(const char *path) {
     if (!slash) return path;
     if (*(slash + 1) == '\0') return "/";
     return slash + 1;
+}
+
+static void basename_without_extension(const char *path, char *out, size_t out_len) {
+    if (!out || out_len == 0) return;
+    out[0] = '\0';
+
+    const char *base = basename_from_path(path);
+    copy_str(out, out_len, base);
+
+    char *dot = strrchr(out, '.');
+    if (dot && dot != out) {
+        *dot = '\0';
+    }
 }
 
 static void parent_dir_from_file(const char *path, char *out, size_t out_len) {
@@ -198,8 +300,8 @@ static void repeat_mask_normalize() {
 static const char *field_title(uint8_t idx) {
     static const char *titles[FIELD_COUNT] = {
         "Alarm", "Hour", "Minute", "Sound",
-        "End Vol lvl", "End Sun lvl", "Vol Ramp", "Sun Ramp",
-        "Snooze", "Snooze Dur", "Hold Dismiss", "Repeat"
+        "End\nVol lvl", "End\nSun lvl", "Vol\nRamp", "Sun\nRamp",
+        "Snooze", "Snooze\nDuration", "Hold to\nDismiss", "Repeat"
     };
     return titles[idx];
 }
@@ -234,7 +336,6 @@ static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &col
     switch ((AlarmField)idx) {
         case AlarmField::ENABLED:
             std::snprintf(buf, len, "%s", g_state.enabled ? "ON" : "OFF");
-            color = toggle_color(g_state.enabled);
             break;
         case AlarmField::HOUR:
             std::snprintf(buf, len, "%02u", (unsigned)g_state.hour);
@@ -243,7 +344,7 @@ static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &col
             std::snprintf(buf, len, "%02u", (unsigned)g_state.minute);
             break;
         case AlarmField::SOUND:
-            std::snprintf(buf, len, "%s", basename_from_path(g_state.sound_path));
+            basename_without_extension(g_state.sound_path, buf, len);
             break;
         case AlarmField::END_VOL:
             std::snprintf(buf, len, "%u%%", (unsigned)g_state.end_vol_pct);
@@ -259,7 +360,6 @@ static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &col
             break;
         case AlarmField::SNOOZE:
             std::snprintf(buf, len, "%s", g_state.snooze_enabled ? "ON" : "OFF");
-            color = toggle_color(g_state.snooze_enabled);
             break;
         case AlarmField::SNOOZE_DURATION:
             std::snprintf(buf, len, "%u min", (unsigned)g_state.snooze_min);
@@ -443,11 +543,26 @@ static void render_fields() {
         const uint8_t idx = (uint8_t)(g_window_start + slot);
         if (!g_title_labels[slot] || !g_value_labels[slot] || !g_value_arcs[slot]) continue;
 
-        lv_label_set_text(g_title_labels[slot], field_title(idx));
+        const char *title = field_title(idx);
+        char title_buf[32];
+        if (strchr(title, '\n')) {
+            copy_str(title_buf, sizeof(title_buf), title);
+        } else {
+            std::snprintf(title_buf, sizeof(title_buf), "\n%s", title);
+        }
+        lv_label_set_text(g_title_labels[slot], title_buf);
 
         const AlarmField field = (AlarmField)idx;
         const bool use_arc = field_uses_arc(field);
         lv_obj_set_hidden(g_value_arcs[slot], !use_arc);
+
+        lv_color_t shell_color = lv_color_make(0x16, 0x16, 0x16);
+        if (field == AlarmField::ENABLED) {
+            shell_color = toggle_color(g_state.enabled);
+        } else if (field == AlarmField::SNOOZE) {
+            shell_color = toggle_color(g_state.snooze_enabled);
+        }
+        lv_obj_set_style_bg_color(g_value_widgets[slot], shell_color, LV_PART_MAIN);
 
         char value[48];
         lv_color_t value_color;
@@ -517,11 +632,21 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_style_pad_right(header, 2, 0);
     lv_obj_set_scrollable(header, false);
 
-    lv_obj_t *lbl_cancel = lv_label_create(header);
+    lv_obj_t *cancel_bg = lv_obj_create(header);
+    lv_obj_set_size(cancel_bg, 96, 24);
+    lv_obj_align(cancel_bg, LV_ALIGN_LEFT_MID, 6, 0);
+    lv_obj_set_style_bg_color(cancel_bg, lv_color_make(0xB0, 0x20, 0x20), 0);
+    lv_obj_set_style_bg_opa(cancel_bg, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(cancel_bg, 4, 0);
+    lv_obj_set_style_border_width(cancel_bg, 0, 0);
+    lv_obj_set_style_pad_all(cancel_bg, 0, 0);
+    lv_obj_set_scrollable(cancel_bg, false);
+
+    lv_obj_t *lbl_cancel = lv_label_create(cancel_bg);
     lv_label_set_text(lbl_cancel, "Cancel");
     lv_obj_set_style_text_font(lbl_cancel, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_cancel, lv_color_white(), 0);
-    lv_obj_align(lbl_cancel, LV_ALIGN_LEFT_MID, 10, 0);
+    lv_obj_center(lbl_cancel);
 
     lv_obj_t *lbl_title = lv_label_create(header);
     lv_label_set_text(lbl_title, title);
@@ -529,11 +654,32 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_style_text_color(lbl_title, lv_color_white(), 0);
     lv_obj_align(lbl_title, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_t *lbl_accept = lv_label_create(header);
+    lv_obj_t *accept_bg = lv_obj_create(header);
+    lv_obj_set_size(accept_bg, 96, 24);
+    lv_obj_align(accept_bg, LV_ALIGN_RIGHT_MID, -6, 0);
+    lv_obj_set_style_bg_color(accept_bg, lv_color_make(0x00, 0x9A, 0x3A), 0);
+    lv_obj_set_style_bg_opa(accept_bg, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(accept_bg, 4, 0);
+    lv_obj_set_style_border_width(accept_bg, 0, 0);
+    lv_obj_set_style_pad_all(accept_bg, 0, 0);
+    lv_obj_set_scrollable(accept_bg, false);
+
+    lv_obj_t *lbl_accept = lv_label_create(accept_bg);
     lv_label_set_text(lbl_accept, "Accept");
     lv_obj_set_style_text_font(lbl_accept, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_accept, lv_color_white(), 0);
-    lv_obj_align(lbl_accept, LV_ALIGN_RIGHT_MID, -10, 0);
+    lv_obj_center(lbl_accept);
+
+    if (screen == g_screen) {
+        g_alarm_header_cancel_bg = cancel_bg;
+        g_alarm_header_accept_bg = accept_bg;
+    } else if (screen == g_repeat_screen) {
+        g_repeat_header_cancel_bg = cancel_bg;
+        g_repeat_header_accept_bg = accept_bg;
+    } else if (screen == g_sound_screen) {
+        g_sound_header_cancel_bg = cancel_bg;
+        g_sound_header_accept_bg = accept_bg;
+    }
 }
 
 static lv_obj_t *create_value_shell(lv_obj_t *parent, int x) {
@@ -734,6 +880,7 @@ static void render_sound_browser() {
         const uint8_t idx = (uint8_t)(g_sound_state.scroll_start + row);
         if (idx >= g_sound_state.entry_count) {
             lv_label_set_text(g_sound_row_labels[row], "");
+            lv_obj_set_style_bg_opa(g_sound_rows[row], LV_OPA_TRANSP, LV_PART_MAIN);
             lv_obj_clear_state(g_sound_rows[row], LV_STATE_FOCUSED);
             continue;
         }
@@ -744,13 +891,21 @@ static void render_sound_browser() {
         if (entry.is_directory) {
             std::snprintf(row_text, sizeof(row_text), "[%s]", entry.name);
             lv_obj_set_style_text_color(g_sound_row_labels[row], lv_color_make(0x7A, 0xBE, 0xFF), 0);
+            lv_obj_set_style_bg_opa(g_sound_rows[row], LV_OPA_TRANSP, LV_PART_MAIN);
         } else if (entry.is_playable) {
             const bool previewing = audio_manager_is_previewing(entry.path);
             std::snprintf(row_text, sizeof(row_text), "%s%s", previewing ? "|| " : "   ", entry.name);
             lv_obj_set_style_text_color(g_sound_row_labels[row], lv_color_white(), 0);
+            if (g_sound_accept_pending && idx == g_sound_state.selected) {
+                lv_obj_set_style_bg_color(g_sound_rows[row], lv_color_make(0x00, 0x9A, 0x3A), LV_PART_MAIN);
+                lv_obj_set_style_bg_opa(g_sound_rows[row], LV_OPA_COVER, LV_PART_MAIN);
+            } else {
+                lv_obj_set_style_bg_opa(g_sound_rows[row], LV_OPA_TRANSP, LV_PART_MAIN);
+            }
         } else {
             std::snprintf(row_text, sizeof(row_text), "- %s", entry.name);
             lv_obj_set_style_text_color(g_sound_row_labels[row], lv_color_make(0xA0, 0xA0, 0xA0), 0);
+            lv_obj_set_style_bg_opa(g_sound_rows[row], LV_OPA_TRANSP, LV_PART_MAIN);
         }
 
         lv_label_set_text(g_sound_row_labels[row], row_text);
@@ -847,6 +1002,11 @@ static void close_repeat_window(bool apply_changes) {
 
 static void open_sound_window() {
     g_sound_state.open = true;
+    g_sound_accept_pending = false;
+    if (g_sound_accept_timer) {
+        lv_timer_del(g_sound_accept_timer);
+        g_sound_accept_timer = nullptr;
+    }
     copy_str(g_sound_state.original_sound_path,
              sizeof(g_sound_state.original_sound_path),
              g_state.sound_path);
@@ -873,6 +1033,12 @@ static void open_sound_window() {
 }
 
 static void close_sound_window(bool apply_changes) {
+    g_sound_accept_pending = false;
+    if (g_sound_accept_timer) {
+        lv_timer_del(g_sound_accept_timer);
+        g_sound_accept_timer = nullptr;
+    }
+
     if (apply_changes && g_sound_state.pending_sound_path[0] != '\0') {
         copy_str(g_state.sound_path, sizeof(g_state.sound_path), g_sound_state.pending_sound_path);
     } else {
@@ -990,11 +1156,36 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
 
     if (g_sound_state.open) {
         if (enc1_pressed) {
+            trigger_header_flash(false);
             close_sound_window(false);
             return UiAlarmAction::NONE;
         }
 
+        if (g_sound_accept_pending) {
+            return UiAlarmAction::NONE;
+        }
+
         if (enc2_pressed) {
+            if (g_sound_state.entry_count > 0) {
+                const AudioBrowserEntry &entry = g_sound_state.entries[g_sound_state.selected];
+                if (entry.is_playable) {
+                    copy_str(g_sound_state.pending_sound_path,
+                             sizeof(g_sound_state.pending_sound_path),
+                             entry.path);
+                    trigger_header_flash(true);
+                    g_sound_accept_pending = true;
+                    render_sound_browser();
+
+                    if (g_sound_accept_timer) {
+                        lv_timer_del(g_sound_accept_timer);
+                    }
+                    g_sound_accept_timer = lv_timer_create(sound_accept_timer_cb, 300, nullptr);
+                    lv_timer_set_repeat_count(g_sound_accept_timer, 1);
+                    return UiAlarmAction::NONE;
+                }
+            }
+
+            trigger_header_flash(true);
             close_sound_window(true);
             return UiAlarmAction::NONE;
         }
@@ -1030,8 +1221,20 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
         return UiAlarmAction::NONE;
     }
 
+    if (g_pending_action != UiAlarmAction::NONE) {
+        UiAlarmAction out = g_pending_action;
+        g_pending_action = UiAlarmAction::NONE;
+        return out;
+    }
+
+    if (g_pending_action_timer) {
+        return UiAlarmAction::NONE;
+    }
+
     if (enc1_pressed) {
-        return UiAlarmAction::CANCEL;
+        trigger_header_flash(false);
+        queue_action_after_flash(UiAlarmAction::CANCEL);
+        return UiAlarmAction::NONE;
     }
 
     if (enc1_delta != 0) {
@@ -1058,8 +1261,10 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
     }
 
     if (enc2_pressed) {
+        trigger_header_flash(true);
         save_state();
-        return UiAlarmAction::ACCEPT;
+        queue_action_after_flash(UiAlarmAction::ACCEPT);
+        return UiAlarmAction::NONE;
     }
 
     render_fields();

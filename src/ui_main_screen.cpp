@@ -70,6 +70,7 @@ void ui_main_screen_init() {
     // Left cluster: time/date/alarm
     lbl_time = lv_label_create(scr);
     lv_label_set_text(lbl_time, "00:00");
+    lv_label_set_recolor(lbl_time, true);
     lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(lbl_time, COL_PRIMARY, 0);
     lv_obj_align(lbl_time, LV_ALIGN_TOP_LEFT, 8, -2);
@@ -167,9 +168,9 @@ void ui_main_screen_update() {
         bool is_pm = now.hour() >= 12;
 
         if (colon_visible) {
-            snprintf(buf, sizeof(buf), "%d:%02d", h12, now.minute());
+            snprintf(buf, sizeof(buf), "%d#ffffff:#%02d", h12, now.minute());
         } else {
-            snprintf(buf, sizeof(buf), "%d %02d", h12, now.minute());
+            snprintf(buf, sizeof(buf), "%d#000000:#%02d", h12, now.minute());
         }
         lv_label_set_text(lbl_time, buf);
         lv_label_set_text(lbl_ampm, is_pm ? "PM" : "AM");
