@@ -265,7 +265,11 @@ void loop() {
             (enc2_held && input_manager_button_hold_ms(ENC2) >= 500);
 
         if (hold_open_armed && !hold_open_latched && hold_ready) {
-            settings_menu_open_main();
+            // Re-check alarm state at the action point to avoid opening settings
+            // during alarm state transitions where screen visibility can lag.
+            if (!alarm_manager_is_alarm_active() && !alarm_manager_is_alarm_screen_visible()) {
+                settings_menu_open_main();
+            }
             hold_open_latched = true;
 
         }

@@ -197,8 +197,8 @@ static void repeat_mask_normalize() {
 
 static const char *field_title(uint8_t idx) {
     static const char *titles[FIELD_COUNT] = {
-        "Enabled", "Hour", "Minute", "Sound",
-        "End Vol Lvl", "End Sun Lvl", "Vol Ramp", "Sun Ramp",
+        "Alarm", "Hour", "Minute", "Sound",
+        "End Vol lvl", "End Sun lvl", "Vol Ramp", "Sun Ramp",
         "Snooze", "Snooze Dur", "Hold Dismiss", "Repeat"
     };
     return titles[idx];
@@ -252,20 +252,20 @@ static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &col
             std::snprintf(buf, len, "%u%%", (unsigned)g_state.end_sun_pct);
             break;
         case AlarmField::VOL_RAMP:
-            std::snprintf(buf, len, "%umin", (unsigned)g_state.vol_ramp_min);
+            std::snprintf(buf, len, "%u min", (unsigned)g_state.vol_ramp_min);
             break;
         case AlarmField::SUN_RAMP:
-            std::snprintf(buf, len, "%umin", (unsigned)g_state.sun_ramp_min);
+            std::snprintf(buf, len, "%u min", (unsigned)g_state.sun_ramp_min);
             break;
         case AlarmField::SNOOZE:
             std::snprintf(buf, len, "%s", g_state.snooze_enabled ? "ON" : "OFF");
             color = toggle_color(g_state.snooze_enabled);
             break;
         case AlarmField::SNOOZE_DURATION:
-            std::snprintf(buf, len, "%umin", (unsigned)g_state.snooze_min);
+            std::snprintf(buf, len, "%u min", (unsigned)g_state.snooze_min);
             break;
         case AlarmField::HOLD_TO_DISMISS:
-            std::snprintf(buf, len, "%us", (unsigned)g_state.hold_sec);
+            std::snprintf(buf, len, "%u sec", (unsigned)g_state.hold_sec);
             break;
         case AlarmField::REPEAT:
             std::snprintf(buf, len, "Select");

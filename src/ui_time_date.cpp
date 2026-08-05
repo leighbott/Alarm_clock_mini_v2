@@ -336,7 +336,7 @@ static lv_obj_t *build_screen() {
     lv_obj_set_style_border_width(screen, 0, 0);
     lv_obj_set_scrollable(screen, false);
 
-    apply_header_base(screen, "Set Time & Date");
+    apply_header_base(screen, "Time & Date");
 
     lv_obj_t *content = lv_obj_create(screen);
     lv_obj_set_size(content, DISP_W, CONTENT_H);

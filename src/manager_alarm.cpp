@@ -440,6 +440,10 @@ bool alarm_manager_is_alarm_active() {
 }
 
 bool alarm_manager_is_alarm_screen_visible() {
+    if (g_state == AlarmState::RAMP_UP || g_state == AlarmState::ACTIVE) {
+        return true;
+    }
+
     lv_obj_t *alarm_screen = ui_alarm_active_window_get_screen();
     return alarm_screen && lv_screen_active() == alarm_screen;
 }
