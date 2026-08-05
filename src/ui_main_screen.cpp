@@ -168,9 +168,9 @@ void ui_main_screen_update() {
         bool is_pm = now.hour() >= 12;
 
         if (colon_visible) {
-            snprintf(buf, sizeof(buf), "%d#ffffff:#%02d", h12, now.minute());
+            snprintf(buf, sizeof(buf), "%u#FFFFFF :#%02u", (unsigned)h12, (unsigned)now.minute());
         } else {
-            snprintf(buf, sizeof(buf), "%d#000000:#%02d", h12, now.minute());
+            snprintf(buf, sizeof(buf), "%u#000000 :#%02u", (unsigned)h12, (unsigned)now.minute());
         }
         lv_label_set_text(lbl_time, buf);
         lv_label_set_text(lbl_ampm, is_pm ? "PM" : "AM");

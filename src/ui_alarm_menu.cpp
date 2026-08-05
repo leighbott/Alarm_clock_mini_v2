@@ -100,13 +100,13 @@ static lv_obj_t *g_sound_screen = nullptr;
 static lv_obj_t *g_sound_dir_label = nullptr;
 static lv_obj_t *g_sound_rows[BROWSER_VISIBLE_ROWS] = {nullptr};
 static lv_obj_t *g_sound_row_labels[BROWSER_VISIBLE_ROWS] = {nullptr};
-static lv_obj_t *g_sound_hint_label = nullptr;
 static SoundBrowserState g_sound_state = {};
 static lv_timer_t *g_sound_accept_timer = nullptr;
 static bool g_sound_accept_pending = false;
 static UiAlarmAction g_pending_action = UiAlarmAction::NONE;
 static lv_timer_t *g_pending_action_timer = nullptr;
 static UiAlarmAction g_deferred_action = UiAlarmAction::NONE;
+static lv_timer_t *g_modal_close_timer = nullptr;
 
 static UiAlarmState g_state = {
     false, 7, 0, 80, 78, 5, 20, true, 9, 3, REPEAT_ONCE, "/test.mp3", AlarmField::ENABLED
@@ -114,6 +114,17 @@ static UiAlarmState g_state = {
 
 static uint8_t g_window_start = 0;
 
+enum class ModalCloseAction : uint8_t {
+    NONE = 0,
+    REPEAT_CANCEL,
+    REPEAT_ACCEPT,
+    SOUND_CANCEL,
+    SOUND_ACCEPT,
+};
+
+static ModalCloseAction g_modal_close_action = ModalCloseAction::NONE;
+
+static void close_repeat_window(bool apply_changes);
 static void close_sound_window(bool apply_changes);
 
 static lv_obj_t *current_cancel_bg() {
@@ -176,6 +187,41 @@ static void queue_action_after_flash(UiAlarmAction action) {
     }
     g_pending_action_timer = lv_timer_create(pending_action_timer_cb, 120, nullptr);
     lv_timer_set_repeat_count(g_pending_action_timer, 1);
+}
+
+static void modal_close_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+
+    ModalCloseAction action = g_modal_close_action;
+    g_modal_close_action = ModalCloseAction::NONE;
+    g_modal_close_timer = nullptr;
+
+    switch (action) {
+        case ModalCloseAction::REPEAT_CANCEL:
+            close_repeat_window(false);
+            break;
+        case ModalCloseAction::REPEAT_ACCEPT:
+            close_repeat_window(true);
+            break;
+        case ModalCloseAction::SOUND_CANCEL:
+            close_sound_window(false);
+            break;
+        case ModalCloseAction::SOUND_ACCEPT:
+            close_sound_window(true);
+            break;
+        case ModalCloseAction::NONE:
+        default:
+            break;
+    }
+}
+
+static void queue_modal_close_after_flash(ModalCloseAction action) {
+    g_modal_close_action = action;
+    if (g_modal_close_timer) {
+        lv_timer_del(g_modal_close_timer);
+    }
+    g_modal_close_timer = lv_timer_create(modal_close_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_modal_close_timer, 1);
 }
 
 static void sound_accept_timer_cb(lv_timer_t *timer) {
@@ -345,6 +391,7 @@ static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &col
             break;
         case AlarmField::SOUND:
             basename_without_extension(g_state.sound_path, buf, len);
+            color = lv_color_make(0x6D, 0xC4, 0xFF);
             break;
         case AlarmField::END_VOL:
             std::snprintf(buf, len, "%u%%", (unsigned)g_state.end_vol_pct);
@@ -864,14 +911,6 @@ static void render_sound_browser() {
     std::snprintf(dir_buf, sizeof(dir_buf), "Dir: %s", g_sound_state.dir_path);
     lv_label_set_text(g_sound_dir_label, dir_buf);
 
-    if (!audio_manager_is_sd_ok()) {
-        if (g_sound_hint_label) {
-            lv_label_set_text(g_sound_hint_label, "SD not available");
-        }
-    } else if (g_sound_hint_label) {
-        lv_label_set_text(g_sound_hint_label, "ENC2 rot: open/play  ENC2 btn: save");
-    }
-
     ensure_sound_browser_scroll();
 
     for (uint8_t row = 0; row < BROWSER_VISIBLE_ROWS; ++row) {
@@ -974,11 +1013,6 @@ static void build_sound_screen() {
         g_sound_row_labels[i] = label;
     }
 
-    g_sound_hint_label = lv_label_create(content);
-    lv_label_set_text(g_sound_hint_label, "ENC2 rot: open/play  ENC2 btn: save");
-    lv_obj_set_style_text_font(g_sound_hint_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(g_sound_hint_label, lv_color_make(0xA6, 0xA6, 0xA6), 0);
-    lv_obj_align(g_sound_hint_label, LV_ALIGN_BOTTOM_LEFT, 6, -2);
 }
 
 static void open_repeat_window() {
@@ -1124,13 +1158,19 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
                                      bool enc1_pressed,
                                      bool enc2_pressed) {
     if (g_repeat_open) {
+        if (g_modal_close_timer) {
+            return UiAlarmAction::NONE;
+        }
+
         if (enc1_pressed) {
-            close_repeat_window(false);
+            trigger_header_flash(false);
+            queue_modal_close_after_flash(ModalCloseAction::REPEAT_CANCEL);
             return UiAlarmAction::NONE;
         }
 
         if (enc2_pressed) {
-            close_repeat_window(true);
+            trigger_header_flash(true);
+            queue_modal_close_after_flash(ModalCloseAction::REPEAT_ACCEPT);
             return UiAlarmAction::NONE;
         }
 
@@ -1155,9 +1195,13 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
     }
 
     if (g_sound_state.open) {
+        if (g_modal_close_timer) {
+            return UiAlarmAction::NONE;
+        }
+
         if (enc1_pressed) {
             trigger_header_flash(false);
-            close_sound_window(false);
+            queue_modal_close_after_flash(ModalCloseAction::SOUND_CANCEL);
             return UiAlarmAction::NONE;
         }
 
@@ -1186,7 +1230,7 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
             }
 
             trigger_header_flash(true);
-            close_sound_window(true);
+            queue_modal_close_after_flash(ModalCloseAction::SOUND_ACCEPT);
             return UiAlarmAction::NONE;
         }
 
