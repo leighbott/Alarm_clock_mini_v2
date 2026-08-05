@@ -108,8 +108,16 @@ static uint8_t selected_index() {
 }
 
 static const char *field_title(uint8_t idx) {
-    static const char *titles[FIELD_COUNT] = {"Hour", "Min", "Day", "Mon", "Year"};
+    static const char *titles[FIELD_COUNT] = {"Hour", "Min", "Day", "Month", "Year"};
     return titles[idx];
+}
+
+static const char *month_short_name(uint8_t month) {
+    static const char *names[] = {
+        "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    };
+    return (month >= 1 && month <= 12) ? names[month] : "---";
 }
 
 static void field_value_and_range(uint8_t idx, int &value, int &min_v, int &max_v, char *buf, size_t buf_len) {
@@ -140,7 +148,7 @@ static void field_value_and_range(uint8_t idx, int &value, int &min_v, int &max_
             value = (int)g_state.month;
             min_v = 1;
             max_v = 12;
-            std::snprintf(buf, buf_len, "%02u", (unsigned)g_state.month);
+            std::snprintf(buf, buf_len, "%s", month_short_name(g_state.month));
             break;
         case TimeField::YEAR:
             value = (int)g_state.year;
@@ -171,8 +179,13 @@ static void update_widgets() {
         int max_v;
         field_value_and_range(i, value, min_v, max_v, text, sizeof(text));
 
-        lv_arc_set_range(g_arc_widgets[i], min_v, max_v);
-        lv_arc_set_value(g_arc_widgets[i], value);
+        if ((TimeField)i == TimeField::HOUR) {
+            lv_arc_set_range(g_arc_widgets[i], 0, 11);
+            lv_arc_set_value(g_arc_widgets[i], value % 12);
+        } else {
+            lv_arc_set_range(g_arc_widgets[i], min_v, max_v);
+            lv_arc_set_value(g_arc_widgets[i], value);
+        }
         lv_label_set_text(g_value_labels[i], text);
     }
 

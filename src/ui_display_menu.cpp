@@ -241,7 +241,7 @@ static lv_obj_t *create_column(lv_obj_t *parent,
     lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(title_label, lv_color_make(0xD0, 0xD0, 0xD0), 0);
     lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, -4);
     lv_obj_set_clickable(title_label, false);
     lv_obj_set_click_focusable(title_label, false);
 

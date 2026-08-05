@@ -54,7 +54,7 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_scrollable(header, false);
 
     lv_obj_t *lbl_cancel = lv_label_create(header);
-    lv_label_set_text(lbl_cancel, "Cancel");
+    lv_label_set_text(lbl_cancel, "Home");
     lv_obj_set_style_text_font(lbl_cancel, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_cancel, lv_color_white(), 0);
     lv_obj_align(lbl_cancel, LV_ALIGN_LEFT_MID, 10, 0);
@@ -70,7 +70,7 @@ static void apply_header_base(lv_obj_t *screen, const char *title) {
     lv_obj_set_click_focusable(lbl_title, false);
 
     lv_obj_t *lbl_accept = lv_label_create(header);
-    lv_label_set_text(lbl_accept, "Accept");
+    lv_label_set_text(lbl_accept, "Home");
     lv_obj_set_style_text_font(lbl_accept, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_accept, lv_color_white(), 0);
     lv_obj_align(lbl_accept, LV_ALIGN_RIGHT_MID, -10, 0);

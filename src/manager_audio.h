@@ -2,6 +2,14 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+
+struct AudioBrowserEntry {
+	char name[32];
+	char path[64];
+	bool is_directory;
+	bool is_playable;
+};
 
 bool audio_manager_init();          // returns true if SD + audio init OK
 
@@ -17,3 +25,12 @@ uint8_t audio_manager_get_volume();             // last set volume (0–100 %)
 
 bool audio_manager_is_sd_ok();
 bool audio_manager_is_playing();
+
+bool audio_manager_browse_dir(const char *dir_path,
+							  AudioBrowserEntry *entries,
+							  size_t max_entries,
+							  size_t *out_count);
+bool audio_manager_is_supported_tune(const char *path);
+void audio_manager_toggle_preview(const char *path);
+void audio_manager_stop_preview();
+bool audio_manager_is_previewing(const char *path);

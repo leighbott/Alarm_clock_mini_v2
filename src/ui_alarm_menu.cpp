@@ -1,5 +1,6 @@
 #include "ui_alarm_menu.h"
 
+#include "manager_audio.h"
 #include "manager_storage.h"
 
 #include <cstdio>
@@ -15,15 +16,22 @@ static constexpr int CONTENT_H = DISP_H - CONTENT_Y;
 
 static constexpr uint8_t FIELD_COUNT = 12;
 static constexpr uint8_t VISIBLE_COLS = 4;
+static constexpr uint8_t LEVEL_COUNT = FIELD_COUNT / VISIBLE_COLS;
 static constexpr uint8_t REPEAT_ONCE = 0x80;
 
+static constexpr int PAGE_DOT_W = 16;
 static constexpr int CONTENT_PAD_X = 6;
 static constexpr int CONTENT_GAP_X = 4;
-static constexpr int COL_W = (DISP_W - (2 * CONTENT_PAD_X) - ((VISIBLE_COLS - 1) * CONTENT_GAP_X)) / VISIBLE_COLS;
+static constexpr int MAIN_COL_START_X = CONTENT_PAD_X + PAGE_DOT_W;
+static constexpr int MAIN_COL_AVAILABLE_W = DISP_W - MAIN_COL_START_X - CONTENT_PAD_X;
+static constexpr int COL_W = (MAIN_COL_AVAILABLE_W - ((VISIBLE_COLS - 1) * CONTENT_GAP_X)) / VISIBLE_COLS;
 static constexpr int TITLE_H = 28;
-static constexpr int VALUE_W = 96;
+static constexpr int VALUE_W = 90;
 static constexpr int VALUE_H = 68;
 static constexpr int VALUE_Y = 32;
+
+static constexpr uint8_t BROWSER_MAX_ENTRIES = 24;
+static constexpr uint8_t BROWSER_VISIBLE_ROWS = 5;
 
 enum class AlarmField : uint8_t {
     ENABLED = 0,
@@ -56,17 +64,37 @@ struct UiAlarmState {
     AlarmField selected;
 };
 
+struct SoundBrowserState {
+    bool open;
+    char dir_path[64];
+    char original_sound_path[64];
+    char pending_sound_path[64];
+    AudioBrowserEntry entries[BROWSER_MAX_ENTRIES];
+    uint8_t entry_count;
+    uint8_t selected;
+    uint8_t scroll_start;
+};
+
 static lv_obj_t *g_screen = nullptr;
 static lv_obj_t *g_value_widgets[VISIBLE_COLS] = {nullptr};
 static lv_obj_t *g_title_labels[VISIBLE_COLS] = {nullptr};
 static lv_obj_t *g_value_labels[VISIBLE_COLS] = {nullptr};
 static lv_obj_t *g_value_arcs[VISIBLE_COLS] = {nullptr};
+static lv_obj_t *g_level_dots[LEVEL_COUNT] = {nullptr};
 
-static lv_obj_t *g_repeat_overlay = nullptr;
-static lv_obj_t *g_repeat_chip[8] = {nullptr}; // 0=Once, 1..7=Mon..Sun
+static lv_obj_t *g_repeat_screen = nullptr;
+static lv_obj_t *g_repeat_chip[8] = {nullptr};
 static lv_obj_t *g_repeat_chip_lbl[8] = {nullptr};
 static bool g_repeat_open = false;
 static uint8_t g_repeat_focus = 0;
+static uint8_t g_repeat_edit_mask = REPEAT_ONCE;
+
+static lv_obj_t *g_sound_screen = nullptr;
+static lv_obj_t *g_sound_dir_label = nullptr;
+static lv_obj_t *g_sound_rows[BROWSER_VISIBLE_ROWS] = {nullptr};
+static lv_obj_t *g_sound_row_labels[BROWSER_VISIBLE_ROWS] = {nullptr};
+static lv_obj_t *g_sound_hint_label = nullptr;
+static SoundBrowserState g_sound_state = {};
 
 static UiAlarmState g_state = {
     false, 7, 0, 80, 78, 5, 20, true, 9, 3, REPEAT_ONCE, "/test.mp3", AlarmField::ENABLED
@@ -85,6 +113,43 @@ static uint8_t wrap_u8(uint8_t value, int32_t delta, uint8_t min_v, uint8_t max_
     int32_t normalized = ((int32_t)value - (int32_t)min_v + delta) % range;
     if (normalized < 0) normalized += range;
     return (uint8_t)((int32_t)min_v + normalized);
+}
+
+static void copy_str(char *dst, size_t dst_len, const char *src) {
+    if (!dst || dst_len == 0) return;
+    dst[0] = '\0';
+    if (!src) return;
+    strncpy(dst, src, dst_len - 1);
+    dst[dst_len - 1] = '\0';
+}
+
+static const char *basename_from_path(const char *path) {
+    if (!path || path[0] == '\0') return "-";
+    const char *slash = strrchr(path, '/');
+    if (!slash) return path;
+    if (*(slash + 1) == '\0') return "/";
+    return slash + 1;
+}
+
+static void parent_dir_from_file(const char *path, char *out, size_t out_len) {
+    if (!out || out_len == 0) return;
+    out[0] = '\0';
+
+    if (!path || path[0] != '/') {
+        copy_str(out, out_len, "/");
+        return;
+    }
+
+    char tmp[64];
+    copy_str(tmp, sizeof(tmp), path);
+    char *slash = strrchr(tmp, '/');
+    if (!slash || slash == tmp) {
+        copy_str(out, out_len, "/");
+        return;
+    }
+
+    *slash = '\0';
+    copy_str(out, out_len, tmp);
 }
 
 static uint8_t raw_to_percent(uint8_t raw_value) {
@@ -113,18 +178,21 @@ static void clamp_state() {
     g_state.snooze_min = clamp_u8(g_state.snooze_min, 1, 30);
     g_state.hold_sec = clamp_u8(g_state.hold_sec, 1, 10);
     if (g_state.sound_path[0] == '\0') {
-        strncpy(g_state.sound_path, "/test.mp3", sizeof(g_state.sound_path) - 1);
-        g_state.sound_path[sizeof(g_state.sound_path) - 1] = '\0';
+        copy_str(g_state.sound_path, sizeof(g_state.sound_path), "/test.mp3");
+    }
+}
+
+static void repeat_mask_normalize(uint8_t &mask) {
+    const uint8_t day_bits = (uint8_t)(mask & 0x7F);
+    if (mask & REPEAT_ONCE) {
+        mask = REPEAT_ONCE;
+    } else if (day_bits == 0) {
+        mask = REPEAT_ONCE;
     }
 }
 
 static void repeat_mask_normalize() {
-    const uint8_t day_bits = (uint8_t)(g_state.repeat_mask & 0x7F);
-    if (g_state.repeat_mask & REPEAT_ONCE) {
-        g_state.repeat_mask = REPEAT_ONCE;
-    } else if (day_bits == 0) {
-        g_state.repeat_mask = REPEAT_ONCE;
-    }
+    repeat_mask_normalize(g_state.repeat_mask);
 }
 
 static const char *field_title(uint8_t idx) {
@@ -175,7 +243,7 @@ static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &col
             std::snprintf(buf, len, "%02u", (unsigned)g_state.minute);
             break;
         case AlarmField::SOUND:
-            std::snprintf(buf, len, "test.mp3");
+            std::snprintf(buf, len, "%s", basename_from_path(g_state.sound_path));
             break;
         case AlarmField::END_VOL:
             std::snprintf(buf, len, "%u%%", (unsigned)g_state.end_vol_pct);
@@ -210,16 +278,23 @@ static uint8_t selected_index() {
     return (uint8_t)g_state.selected;
 }
 
-static void update_window_for_selection() {
-    const uint8_t sel = selected_index();
-    if (sel < g_window_start) {
-        g_window_start = sel;
-    } else if (sel >= (uint8_t)(g_window_start + VISIBLE_COLS)) {
-        g_window_start = (uint8_t)(sel - (VISIBLE_COLS - 1));
-    }
+static uint8_t current_level() {
+    return (uint8_t)(selected_index() / VISIBLE_COLS);
+}
 
-    const uint8_t max_start = FIELD_COUNT - VISIBLE_COLS;
-    if (g_window_start > max_start) g_window_start = max_start;
+static void update_window_for_selection() {
+    g_window_start = (uint8_t)(current_level() * VISIBLE_COLS);
+}
+
+static void update_level_dots() {
+    const uint8_t active = current_level();
+    for (uint8_t i = 0; i < LEVEL_COUNT; ++i) {
+        if (!g_level_dots[i]) continue;
+        lv_obj_set_style_bg_color(g_level_dots[i],
+                                  (i == active) ? lv_color_white() : lv_color_make(0x42, 0x42, 0x42),
+                                  LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(g_level_dots[i], LV_OPA_COVER, LV_PART_MAIN);
+    }
 }
 
 static void update_focus() {
@@ -230,62 +305,47 @@ static void update_focus() {
         if (idx == sel) lv_obj_add_state(g_value_widgets[i], LV_STATE_FOCUSED);
         else lv_obj_clear_state(g_value_widgets[i], LV_STATE_FOCUSED);
     }
+    update_level_dots();
 }
 
-static void update_repeat_overlay_widgets() {
-    if (!g_repeat_overlay) return;
+static void update_repeat_widgets() {
+    if (!g_repeat_screen) return;
 
-    repeat_mask_normalize();
+    repeat_mask_normalize(g_repeat_edit_mask);
 
     for (uint8_t i = 0; i < 8; ++i) {
         if (!g_repeat_chip[i] || !g_repeat_chip_lbl[i]) continue;
 
         bool on = false;
         if (i == 0) {
-            on = (g_state.repeat_mask & REPEAT_ONCE) != 0;
+            on = (g_repeat_edit_mask & REPEAT_ONCE) != 0;
         } else {
             const uint8_t bit = repeat_slot_to_day_bit(i);
-            on = ((g_state.repeat_mask & REPEAT_ONCE) == 0) && ((g_state.repeat_mask & (1U << bit)) != 0);
+            on = ((g_repeat_edit_mask & REPEAT_ONCE) == 0) && ((g_repeat_edit_mask & (1U << bit)) != 0);
         }
 
         lv_obj_set_style_bg_color(g_repeat_chip[i],
-                                  on ? lv_color_make(0x00, 0x88, 0x36) : lv_color_make(0x44, 0x44, 0x44),
+                                  on ? lv_color_make(0x00, 0x88, 0x36) : lv_color_make(0x30, 0x30, 0x30),
                                   LV_PART_MAIN);
         lv_obj_set_style_border_width(g_repeat_chip[i], (i == g_repeat_focus) ? 2 : 1, LV_PART_MAIN);
         lv_obj_set_style_border_color(g_repeat_chip[i],
                                       (i == g_repeat_focus) ? lv_color_white() : lv_color_make(0x66, 0x66, 0x66),
                                       LV_PART_MAIN);
-        lv_obj_set_style_text_color(g_repeat_chip_lbl[i], lv_color_white(), 0);
     }
-}
-
-static void open_repeat_overlay() {
-    if (!g_repeat_overlay) return;
-    g_repeat_open = true;
-    g_repeat_focus = 0;
-    lv_obj_set_hidden(g_repeat_overlay, false);
-    update_repeat_overlay_widgets();
-}
-
-static void close_repeat_overlay() {
-    if (!g_repeat_overlay) return;
-    g_repeat_open = false;
-    lv_obj_set_hidden(g_repeat_overlay, true);
-    update_focus();
 }
 
 static void toggle_repeat_focus() {
     if (g_repeat_focus == 0) {
-        g_state.repeat_mask = REPEAT_ONCE;
+        g_repeat_edit_mask = REPEAT_ONCE;
     } else {
-        g_state.repeat_mask &= (uint8_t)~REPEAT_ONCE;
+        g_repeat_edit_mask &= (uint8_t)~REPEAT_ONCE;
         const uint8_t bit = repeat_slot_to_day_bit(g_repeat_focus);
         const uint8_t mask_bit = (uint8_t)(1U << bit);
-        if (g_state.repeat_mask & mask_bit) g_state.repeat_mask &= (uint8_t)~mask_bit;
-        else g_state.repeat_mask |= mask_bit;
+        if (g_repeat_edit_mask & mask_bit) g_repeat_edit_mask &= (uint8_t)~mask_bit;
+        else g_repeat_edit_mask |= mask_bit;
 
-        if ((g_state.repeat_mask & 0x7F) == 0) {
-            g_state.repeat_mask = REPEAT_ONCE;
+        if ((g_repeat_edit_mask & 0x7F) == 0) {
+            g_repeat_edit_mask = REPEAT_ONCE;
         }
     }
 }
@@ -305,8 +365,7 @@ static void save_state() {
     s.hold_dismiss_sec = g_state.hold_sec;
     s.repeat_mode = g_state.repeat_mask;
 
-    strncpy(s.alarm_mp3, "/test.mp3", sizeof(s.alarm_mp3) - 1);
-    s.alarm_mp3[sizeof(s.alarm_mp3) - 1] = '\0';
+    copy_str(s.alarm_mp3, sizeof(s.alarm_mp3), g_state.sound_path);
 
     storage_manager_save_alarm();
 }
@@ -325,8 +384,6 @@ static void adjust_selected_field(int32_t delta) {
             g_state.minute = wrap_u8(g_state.minute, delta, 0, 59);
             break;
         case AlarmField::SOUND:
-            strncpy(g_state.sound_path, "/test.mp3", sizeof(g_state.sound_path) - 1);
-            g_state.sound_path[sizeof(g_state.sound_path) - 1] = '\0';
             break;
         case AlarmField::END_VOL: {
             int16_t v = (int16_t)g_state.end_vol_pct + (int16_t)delta;
@@ -395,6 +452,7 @@ static void render_fields() {
         char value[48];
         lv_color_t value_color;
         field_value_text(idx, value, sizeof(value), value_color);
+
         if (use_arc) {
             int32_t arc_min = 0;
             int32_t arc_max = 100;
@@ -403,8 +461,8 @@ static void render_fields() {
             switch (field) {
                 case AlarmField::HOUR:
                     arc_min = 0;
-                    arc_max = 23;
-                    arc_value = g_state.hour;
+                    arc_max = 11;
+                    arc_value = (int32_t)(g_state.hour % 12);
                     std::snprintf(value, sizeof(value), "%02u", (unsigned)g_state.hour);
                     break;
                 case AlarmField::MINUTE:
@@ -417,13 +475,13 @@ static void render_fields() {
                     arc_min = 0;
                     arc_max = 100;
                     arc_value = g_state.end_vol_pct;
-                    std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.end_vol_pct);
+                    std::snprintf(value, sizeof(value), "%u%%", (unsigned)g_state.end_vol_pct);
                     break;
                 case AlarmField::END_SUN:
                     arc_min = 0;
                     arc_max = 100;
                     arc_value = g_state.end_sun_pct;
-                    std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.end_sun_pct);
+                    std::snprintf(value, sizeof(value), "%u%%", (unsigned)g_state.end_sun_pct);
                     break;
                 default:
                     break;
@@ -550,49 +608,284 @@ static void create_column(lv_obj_t *parent, int x, uint8_t slot) {
     g_value_labels[slot] = value_label;
 }
 
-static void build_repeat_overlay(lv_obj_t *parent) {
-    g_repeat_overlay = lv_obj_create(parent);
-    lv_obj_set_size(g_repeat_overlay, DISP_W, DISP_H);
-    lv_obj_set_pos(g_repeat_overlay, 0, 0);
-    lv_obj_set_style_bg_color(g_repeat_overlay, lv_color_make(0x08, 0x08, 0x08), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(g_repeat_overlay, LV_OPA_90, LV_PART_MAIN);
-    lv_obj_set_style_border_width(g_repeat_overlay, 2, LV_PART_MAIN);
-    lv_obj_set_style_border_color(g_repeat_overlay, lv_color_make(0x55, 0x55, 0x55), LV_PART_MAIN);
-    lv_obj_set_scrollable(g_repeat_overlay, false);
+static void create_level_dots(lv_obj_t *parent) {
+    const int dot_h = 8;
+    const int gap = 12;
+    const int total_h = (LEVEL_COUNT * dot_h) + ((LEVEL_COUNT - 1) * gap);
+    const int start_y = (CONTENT_H - total_h) / 2;
 
-    lv_obj_t *title = lv_label_create(g_repeat_overlay);
-    lv_label_set_text(title, "Repeat Pattern");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    for (uint8_t i = 0; i < LEVEL_COUNT; ++i) {
+        lv_obj_t *dot = lv_obj_create(parent);
+        lv_obj_set_size(dot, 8, 8);
+        lv_obj_set_pos(dot, 6, start_y + i * (dot_h + gap));
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_set_style_border_width(dot, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(dot, 0, LV_PART_MAIN);
+        lv_obj_set_scrollable(dot, false);
+        g_level_dots[i] = dot;
+    }
+}
+
+static void build_repeat_screen() {
+    g_repeat_screen = lv_obj_create(nullptr);
+    lv_obj_set_size(g_repeat_screen, DISP_W, DISP_H);
+    lv_obj_set_style_pad_all(g_repeat_screen, 0, 0);
+    lv_obj_set_style_border_width(g_repeat_screen, 0, 0);
+    lv_obj_set_scrollable(g_repeat_screen, false);
+
+    apply_header_base(g_repeat_screen, "Repeat Alarm");
+
+    lv_obj_t *content = lv_obj_create(g_repeat_screen);
+    lv_obj_set_size(content, DISP_W, CONTENT_H);
+    lv_obj_set_pos(content, 0, CONTENT_Y);
+    lv_obj_set_style_bg_color(content, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(content, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(content, 0, 0);
+    lv_obj_set_style_pad_all(content, 0, 0);
+    lv_obj_set_scrollable(content, false);
 
     static const char *chip_text[8] = {"Once", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-    const int y = 64;
-    int x = 8;
-    for (uint8_t i = 0; i < 8; ++i) {
-        g_repeat_chip[i] = lv_obj_create(g_repeat_overlay);
-        const int chip_w = (i == 0) ? 76 : 48;
-        lv_obj_set_size(g_repeat_chip[i], chip_w, 26);
-        lv_obj_set_pos(g_repeat_chip[i], x, y);
+
+    g_repeat_chip[0] = lv_obj_create(content);
+    lv_obj_set_size(g_repeat_chip[0], 92, 26);
+    lv_obj_align(g_repeat_chip[0], LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_set_style_radius(g_repeat_chip[0], 6, LV_PART_MAIN);
+    lv_obj_set_scrollable(g_repeat_chip[0], false);
+
+    g_repeat_chip_lbl[0] = lv_label_create(g_repeat_chip[0]);
+    lv_label_set_text(g_repeat_chip_lbl[0], chip_text[0]);
+    lv_obj_set_style_text_font(g_repeat_chip_lbl[0], &lv_font_montserrat_16, 0);
+    lv_obj_center(g_repeat_chip_lbl[0]);
+
+    const int day_gap = 2;
+    const int day_w = (DISP_W - 12 - (day_gap * 6)) / 7;
+    const int day_y = 54;
+
+    for (uint8_t i = 1; i < 8; ++i) {
+        g_repeat_chip[i] = lv_obj_create(content);
+        lv_obj_set_size(g_repeat_chip[i], day_w, 26);
+        lv_obj_set_pos(g_repeat_chip[i], 6 + (int)(i - 1) * (day_w + day_gap), day_y);
         lv_obj_set_style_radius(g_repeat_chip[i], 6, LV_PART_MAIN);
         lv_obj_set_scrollable(g_repeat_chip[i], false);
 
         g_repeat_chip_lbl[i] = lv_label_create(g_repeat_chip[i]);
         lv_label_set_text(g_repeat_chip_lbl[i], chip_text[i]);
-        lv_obj_set_style_text_font(g_repeat_chip_lbl[i], &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(g_repeat_chip_lbl[i], &lv_font_montserrat_14, 0);
         lv_obj_center(g_repeat_chip_lbl[i]);
-
-        x += chip_w + 4;
     }
-
-    lv_obj_set_hidden(g_repeat_overlay, true);
 }
 
-} // namespace
+static void refresh_sound_browser_entries() {
+    size_t count = 0;
+    if (!audio_manager_browse_dir(g_sound_state.dir_path,
+                                  g_sound_state.entries,
+                                  BROWSER_MAX_ENTRIES,
+                                  &count)) {
+        g_sound_state.entry_count = 0;
+        g_sound_state.selected = 0;
+        g_sound_state.scroll_start = 0;
+        return;
+    }
 
-void ui_alarm_init() {
-    if (g_screen) return;
+    if (count > BROWSER_MAX_ENTRIES) count = BROWSER_MAX_ENTRIES;
+    g_sound_state.entry_count = (uint8_t)count;
 
+    if (g_sound_state.entry_count == 0) {
+        g_sound_state.selected = 0;
+        g_sound_state.scroll_start = 0;
+    } else if (g_sound_state.selected >= g_sound_state.entry_count) {
+        g_sound_state.selected = 0;
+    }
+}
+
+static void ensure_sound_browser_scroll() {
+    if (g_sound_state.entry_count == 0) {
+        g_sound_state.scroll_start = 0;
+        return;
+    }
+
+    if (g_sound_state.selected < g_sound_state.scroll_start) {
+        g_sound_state.scroll_start = g_sound_state.selected;
+    } else if (g_sound_state.selected >= (uint8_t)(g_sound_state.scroll_start + BROWSER_VISIBLE_ROWS)) {
+        g_sound_state.scroll_start = (uint8_t)(g_sound_state.selected - (BROWSER_VISIBLE_ROWS - 1));
+    }
+}
+
+static void render_sound_browser() {
+    if (!g_sound_screen || !g_sound_dir_label) return;
+
+    char dir_buf[72];
+    std::snprintf(dir_buf, sizeof(dir_buf), "Dir: %s", g_sound_state.dir_path);
+    lv_label_set_text(g_sound_dir_label, dir_buf);
+
+    if (!audio_manager_is_sd_ok()) {
+        if (g_sound_hint_label) {
+            lv_label_set_text(g_sound_hint_label, "SD not available");
+        }
+    } else if (g_sound_hint_label) {
+        lv_label_set_text(g_sound_hint_label, "ENC2 rot: open/play  ENC2 btn: save");
+    }
+
+    ensure_sound_browser_scroll();
+
+    for (uint8_t row = 0; row < BROWSER_VISIBLE_ROWS; ++row) {
+        if (!g_sound_rows[row] || !g_sound_row_labels[row]) continue;
+
+        const uint8_t idx = (uint8_t)(g_sound_state.scroll_start + row);
+        if (idx >= g_sound_state.entry_count) {
+            lv_label_set_text(g_sound_row_labels[row], "");
+            lv_obj_clear_state(g_sound_rows[row], LV_STATE_FOCUSED);
+            continue;
+        }
+
+        const AudioBrowserEntry &entry = g_sound_state.entries[idx];
+        char row_text[64];
+
+        if (entry.is_directory) {
+            std::snprintf(row_text, sizeof(row_text), "[%s]", entry.name);
+            lv_obj_set_style_text_color(g_sound_row_labels[row], lv_color_make(0x7A, 0xBE, 0xFF), 0);
+        } else if (entry.is_playable) {
+            const bool previewing = audio_manager_is_previewing(entry.path);
+            std::snprintf(row_text, sizeof(row_text), "%s%s", previewing ? "|| " : "   ", entry.name);
+            lv_obj_set_style_text_color(g_sound_row_labels[row], lv_color_white(), 0);
+        } else {
+            std::snprintf(row_text, sizeof(row_text), "- %s", entry.name);
+            lv_obj_set_style_text_color(g_sound_row_labels[row], lv_color_make(0xA0, 0xA0, 0xA0), 0);
+        }
+
+        lv_label_set_text(g_sound_row_labels[row], row_text);
+
+        if (idx == g_sound_state.selected) {
+            lv_obj_add_state(g_sound_rows[row], LV_STATE_FOCUSED);
+        } else {
+            lv_obj_clear_state(g_sound_rows[row], LV_STATE_FOCUSED);
+        }
+    }
+}
+
+static void build_sound_screen() {
+    g_sound_screen = lv_obj_create(nullptr);
+    lv_obj_set_size(g_sound_screen, DISP_W, DISP_H);
+    lv_obj_set_style_pad_all(g_sound_screen, 0, 0);
+    lv_obj_set_style_border_width(g_sound_screen, 0, 0);
+    lv_obj_set_scrollable(g_sound_screen, false);
+
+    apply_header_base(g_sound_screen, "Select Sound");
+
+    lv_obj_t *content = lv_obj_create(g_sound_screen);
+    lv_obj_set_size(content, DISP_W, CONTENT_H);
+    lv_obj_set_pos(content, 0, CONTENT_Y);
+    lv_obj_set_style_bg_color(content, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(content, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(content, 0, 0);
+    lv_obj_set_style_pad_all(content, 0, 0);
+    lv_obj_set_scrollable(content, false);
+
+    g_sound_dir_label = lv_label_create(content);
+    lv_label_set_text(g_sound_dir_label, "Dir: /");
+    lv_obj_set_style_text_font(g_sound_dir_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(g_sound_dir_label, lv_color_make(0xD0, 0xD0, 0xD0), 0);
+    lv_obj_set_width(g_sound_dir_label, DISP_W - 12);
+    lv_obj_set_style_text_align(g_sound_dir_label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(g_sound_dir_label, LV_ALIGN_TOP_LEFT, 6, 2);
+
+    const int row_h = 16;
+    const int row_gap = 2;
+    const int row_y_start = 22;
+    for (uint8_t i = 0; i < BROWSER_VISIBLE_ROWS; ++i) {
+        lv_obj_t *row = lv_obj_create(content);
+        lv_obj_set_size(row, DISP_W - 12, row_h);
+        lv_obj_set_pos(row, 6, row_y_start + (int)i * (row_h + row_gap));
+        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(row, 3, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(row, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(row, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(row, 0, LV_PART_MAIN);
+        lv_obj_set_scrollable(row, false);
+
+        lv_obj_set_style_border_width(row, 1, LV_PART_MAIN | LV_STATE_FOCUSED);
+        lv_obj_set_style_border_color(row, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
+
+        lv_obj_t *label = lv_label_create(row);
+        lv_label_set_text(label, "");
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_set_width(label, DISP_W - 20);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
+
+        g_sound_rows[i] = row;
+        g_sound_row_labels[i] = label;
+    }
+
+    g_sound_hint_label = lv_label_create(content);
+    lv_label_set_text(g_sound_hint_label, "ENC2 rot: open/play  ENC2 btn: save");
+    lv_obj_set_style_text_font(g_sound_hint_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(g_sound_hint_label, lv_color_make(0xA6, 0xA6, 0xA6), 0);
+    lv_obj_align(g_sound_hint_label, LV_ALIGN_BOTTOM_LEFT, 6, -2);
+}
+
+static void open_repeat_window() {
+    g_repeat_open = true;
+    g_repeat_focus = 0;
+    g_repeat_edit_mask = g_state.repeat_mask;
+    repeat_mask_normalize(g_repeat_edit_mask);
+    update_repeat_widgets();
+    lv_screen_load(g_repeat_screen);
+}
+
+static void close_repeat_window(bool apply_changes) {
+    if (apply_changes) {
+        g_state.repeat_mask = g_repeat_edit_mask;
+        repeat_mask_normalize();
+    }
+    g_repeat_open = false;
+    lv_screen_load(g_screen);
+    render_fields();
+}
+
+static void open_sound_window() {
+    g_sound_state.open = true;
+    copy_str(g_sound_state.original_sound_path,
+             sizeof(g_sound_state.original_sound_path),
+             g_state.sound_path);
+    copy_str(g_sound_state.pending_sound_path,
+             sizeof(g_sound_state.pending_sound_path),
+             g_state.sound_path);
+
+    parent_dir_from_file(g_state.sound_path, g_sound_state.dir_path, sizeof(g_sound_state.dir_path));
+    g_sound_state.selected = 0;
+    g_sound_state.scroll_start = 0;
+
+    refresh_sound_browser_entries();
+
+    for (uint8_t i = 0; i < g_sound_state.entry_count; ++i) {
+        if (!g_sound_state.entries[i].is_directory &&
+            strcmp(g_sound_state.entries[i].path, g_sound_state.pending_sound_path) == 0) {
+            g_sound_state.selected = i;
+            break;
+        }
+    }
+
+    render_sound_browser();
+    lv_screen_load(g_sound_screen);
+}
+
+static void close_sound_window(bool apply_changes) {
+    if (apply_changes && g_sound_state.pending_sound_path[0] != '\0') {
+        copy_str(g_state.sound_path, sizeof(g_state.sound_path), g_sound_state.pending_sound_path);
+    } else {
+        copy_str(g_state.sound_path, sizeof(g_state.sound_path), g_sound_state.original_sound_path);
+    }
+
+    audio_manager_stop_preview();
+    g_sound_state.open = false;
+    lv_screen_load(g_screen);
+    render_fields();
+}
+
+static void build_alarm_screen() {
     g_screen = lv_obj_create(nullptr);
     lv_obj_set_size(g_screen, DISP_W, DISP_H);
     lv_obj_set_style_pad_all(g_screen, 0, 0);
@@ -610,13 +903,24 @@ void ui_alarm_init() {
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_set_scrollable(content, false);
 
+    create_level_dots(content);
+
     for (uint8_t i = 0; i < VISIBLE_COLS; ++i) {
-        const int x = CONTENT_PAD_X + i * (COL_W + CONTENT_GAP_X);
+        const int x = MAIN_COL_START_X + i * (COL_W + CONTENT_GAP_X);
         create_column(content, x, i);
     }
 
-    build_repeat_overlay(g_screen);
     render_fields();
+}
+
+} // namespace
+
+void ui_alarm_init() {
+    if (g_screen) return;
+
+    build_alarm_screen();
+    build_repeat_screen();
+    build_sound_screen();
 }
 
 lv_obj_t *ui_alarm_get_screen() {
@@ -636,13 +940,16 @@ void ui_alarm_on_enter() {
     g_state.snooze_min = (uint8_t)((s.snooze_duration_min > 30) ? 30 : s.snooze_duration_min);
     g_state.hold_sec = s.hold_dismiss_sec;
     g_state.repeat_mask = s.repeat_mode;
-    strncpy(g_state.sound_path, (s.alarm_mp3[0] != '\0') ? s.alarm_mp3 : "/test.mp3", sizeof(g_state.sound_path) - 1);
-    g_state.sound_path[sizeof(g_state.sound_path) - 1] = '\0';
+    copy_str(g_state.sound_path,
+             sizeof(g_state.sound_path),
+             (s.alarm_mp3[0] != '\0') ? s.alarm_mp3 : "/test.mp3");
 
     g_state.selected = AlarmField::ENABLED;
     g_window_start = 0;
+    g_repeat_open = false;
+    g_sound_state.open = false;
     repeat_mask_normalize();
-    close_repeat_overlay();
+    audio_manager_stop_preview();
     render_fields();
 }
 
@@ -652,16 +959,13 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
                                      bool enc2_pressed) {
     if (g_repeat_open) {
         if (enc1_pressed) {
-            close_repeat_overlay();
-            render_fields();
+            close_repeat_window(false);
             return UiAlarmAction::NONE;
         }
 
         if (enc2_pressed) {
-            close_repeat_overlay();
-            save_state();
-            render_fields();
-            return UiAlarmAction::ACCEPT;
+            close_repeat_window(true);
+            return UiAlarmAction::NONE;
         }
 
         if (enc1_delta != 0) {
@@ -673,12 +977,54 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
                 if (next > 7) next = 0;
                 g_repeat_focus = (uint8_t)next;
             }
-            update_repeat_overlay_widgets();
+            update_repeat_widgets();
         }
 
         if (enc2_delta != 0) {
             toggle_repeat_focus();
-            update_repeat_overlay_widgets();
+            update_repeat_widgets();
+        }
+
+        return UiAlarmAction::NONE;
+    }
+
+    if (g_sound_state.open) {
+        if (enc1_pressed) {
+            close_sound_window(false);
+            return UiAlarmAction::NONE;
+        }
+
+        if (enc2_pressed) {
+            close_sound_window(true);
+            return UiAlarmAction::NONE;
+        }
+
+        if (enc1_delta != 0 && g_sound_state.entry_count > 0) {
+            const int8_t direction = (enc1_delta > 0) ? 1 : -1;
+            int32_t steps = (enc1_delta > 0) ? enc1_delta : -enc1_delta;
+            while (steps-- > 0) {
+                int16_t next = (int16_t)g_sound_state.selected + direction;
+                if (next < 0) next = g_sound_state.entry_count - 1;
+                if (next >= g_sound_state.entry_count) next = 0;
+                g_sound_state.selected = (uint8_t)next;
+            }
+            render_sound_browser();
+        }
+
+        if (enc2_delta != 0 && g_sound_state.entry_count > 0) {
+            const AudioBrowserEntry &entry = g_sound_state.entries[g_sound_state.selected];
+            if (entry.is_directory) {
+                copy_str(g_sound_state.dir_path, sizeof(g_sound_state.dir_path), entry.path);
+                g_sound_state.selected = 0;
+                g_sound_state.scroll_start = 0;
+                refresh_sound_browser_entries();
+            } else if (entry.is_playable) {
+                copy_str(g_sound_state.pending_sound_path,
+                         sizeof(g_sound_state.pending_sound_path),
+                         entry.path);
+                audio_manager_toggle_preview(entry.path);
+            }
+            render_sound_browser();
         }
 
         return UiAlarmAction::NONE;
@@ -701,7 +1047,11 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
 
     if (enc2_delta != 0) {
         if (g_state.selected == AlarmField::REPEAT) {
-            open_repeat_overlay();
+            open_repeat_window();
+            return UiAlarmAction::NONE;
+        }
+        if (g_state.selected == AlarmField::SOUND) {
+            open_sound_window();
             return UiAlarmAction::NONE;
         }
         adjust_selected_field(enc2_delta);
