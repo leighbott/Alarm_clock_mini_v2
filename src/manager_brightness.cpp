@@ -32,9 +32,16 @@ static uint8_t clamp_with_minimum(uint8_t value) {
 }
 
 static uint8_t map_ldr_to_brightness(float ldr_value) {
-    constexpr float LDR_MAX_RAW = 2500.0f;
+    float ldr_max_raw = storage_manager_get().ldr_max_raw;
+    if (ldr_max_raw < 0.0f) ldr_max_raw = 0.0f;
+    if (ldr_max_raw > 4095.0f) ldr_max_raw = 4095.0f;
 
-    float normalized = ldr_value / LDR_MAX_RAW;
+    float normalized = 0.0f;
+    if (ldr_max_raw <= 0.0f) {
+        normalized = (ldr_value > 0.0f) ? 1.0f : 0.0f;
+    } else {
+        normalized = ldr_value / ldr_max_raw;
+    }
     if (normalized < 0.0f) normalized = 0.0f;
     if (normalized > 1.0f) normalized = 1.0f;
 

@@ -14,6 +14,7 @@ enum class UiDisplayField : uint8_t {
     MANUAL_BRIGHTNESS,
     AUTO_BRIGHTNESS,
     DISPLAY_BOOST,
+    LDR_MAX_RAW,
 };
 
 struct UiDisplayState {
@@ -21,6 +22,7 @@ struct UiDisplayState {
     uint8_t manual_brightness_percent;
     bool auto_brightness;
     uint8_t boost_brightness_percent;
+    uint16_t ldr_max_raw;
     UiDisplayField selected_field;
 };
 

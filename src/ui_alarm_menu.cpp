@@ -1,6 +1,7 @@
 #include "ui_alarm_menu.h"
 
 #include "manager_audio.h"
+#include "manager_led.h"
 #include "manager_storage.h"
 
 #include <cstdio>
@@ -32,6 +33,7 @@ static constexpr int VALUE_Y = 36;
 
 static constexpr uint8_t BROWSER_MAX_ENTRIES = 24;
 static constexpr uint8_t BROWSER_VISIBLE_ROWS = 5;
+static constexpr uint32_t PREVIEW_TIMEOUT_MS = 2000;
 
 enum class AlarmField : uint8_t {
     ENABLED = 0,
@@ -107,6 +109,14 @@ static UiAlarmAction g_pending_action = UiAlarmAction::NONE;
 static lv_timer_t *g_pending_action_timer = nullptr;
 static UiAlarmAction g_deferred_action = UiAlarmAction::NONE;
 static lv_timer_t *g_modal_close_timer = nullptr;
+static lv_timer_t *g_realtime_preview_timer = nullptr;
+static bool g_preview_led_active = false;
+static uint8_t g_preview_led_front = 0;
+static uint8_t g_preview_led_back = 0;
+static bool g_preview_led_front_on = false;
+static bool g_preview_led_back_on = false;
+static uint8_t g_preview_volume = 0;
+static bool g_preview_audio_active = false;
 
 static UiAlarmState g_state = {
     false, 7, 0, 80, 78, 5, 20, true, 9, 3, REPEAT_ONCE, "/test.mp3", AlarmField::ENABLED
@@ -316,6 +326,89 @@ static uint8_t percent_to_raw(uint8_t percent_value) {
     return (uint8_t)scaled;
 }
 
+static void stop_realtime_preview();
+
+static void realtime_preview_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    g_realtime_preview_timer = nullptr;
+    stop_realtime_preview();
+}
+
+static void restart_realtime_preview_timer() {
+    if (g_realtime_preview_timer) {
+        lv_timer_reset(g_realtime_preview_timer);
+        return;
+    }
+    g_realtime_preview_timer = lv_timer_create(realtime_preview_timer_cb, PREVIEW_TIMEOUT_MS, nullptr);
+    lv_timer_set_repeat_count(g_realtime_preview_timer, 1);
+}
+
+static void start_led_preview_if_needed() {
+    if (g_preview_led_active) return;
+
+    g_preview_led_front = led_manager_get_front();
+    g_preview_led_back = led_manager_get_back();
+    g_preview_led_front_on = led_manager_is_front_on();
+    g_preview_led_back_on = led_manager_is_back_on();
+
+    if (!g_preview_led_front_on) led_manager_toggle_front();
+    if (!g_preview_led_back_on) led_manager_toggle_back();
+
+    g_preview_led_active = true;
+}
+
+static void preview_end_sun_level() {
+    start_led_preview_if_needed();
+    const uint8_t raw = percent_to_raw(g_state.end_sun_pct);
+    led_manager_set_front(raw);
+    led_manager_set_back(raw);
+    restart_realtime_preview_timer();
+}
+
+static void preview_end_volume_level() {
+    if (g_state.sound_path[0] == '\0') {
+        copy_str(g_state.sound_path, sizeof(g_state.sound_path), "/test.mp3");
+    }
+
+    if (!g_preview_audio_active) {
+        g_preview_volume = audio_manager_get_volume();
+        audio_manager_play_loop(g_state.sound_path);
+        g_preview_audio_active = true;
+    }
+
+    audio_manager_set_volume(g_state.end_vol_pct);
+    restart_realtime_preview_timer();
+}
+
+static void stop_realtime_preview() {
+    if (g_realtime_preview_timer) {
+        lv_timer_del(g_realtime_preview_timer);
+        g_realtime_preview_timer = nullptr;
+    }
+
+    if (g_preview_led_active) {
+        led_manager_set_front(g_preview_led_front);
+        led_manager_set_back(g_preview_led_back);
+
+        const bool front_now = led_manager_is_front_on();
+        const bool back_now = led_manager_is_back_on();
+
+        if (front_now != g_preview_led_front_on) led_manager_toggle_front();
+        if (back_now != g_preview_led_back_on) led_manager_toggle_back();
+
+        g_preview_led_active = false;
+    }
+
+    if (g_preview_audio_active && audio_manager_is_playing()) {
+        audio_manager_stop();
+    }
+    if (g_preview_audio_active) {
+        audio_manager_set_volume(g_preview_volume);
+    }
+    g_preview_audio_active = false;
+    g_preview_volume = 0;
+}
+
 static void clamp_state() {
     g_state.hour = clamp_u8(g_state.hour, 0, 23);
     g_state.minute = clamp_u8(g_state.minute, 0, 59);
@@ -394,10 +487,10 @@ static void field_value_text(uint8_t idx, char *buf, size_t len, lv_color_t &col
             color = lv_color_make(0x6D, 0xC4, 0xFF);
             break;
         case AlarmField::END_VOL:
-            std::snprintf(buf, len, "%u%%", (unsigned)g_state.end_vol_pct);
+            std::snprintf(buf, len, "%u", (unsigned)g_state.end_vol_pct);
             break;
         case AlarmField::END_SUN:
-            std::snprintf(buf, len, "%u%%", (unsigned)g_state.end_sun_pct);
+            std::snprintf(buf, len, "%u", (unsigned)g_state.end_sun_pct);
             break;
         case AlarmField::VOL_RAMP:
             std::snprintf(buf, len, "%u min", (unsigned)g_state.vol_ramp_min);
@@ -533,17 +626,21 @@ static void adjust_selected_field(int32_t delta) {
         case AlarmField::SOUND:
             break;
         case AlarmField::END_VOL: {
-            int16_t v = (int16_t)g_state.end_vol_pct + (int16_t)delta;
+            int16_t v = (int16_t)g_state.end_vol_pct + (int16_t)(delta * 5);
             if (v < 0) v = 0;
             if (v > 100) v = 100;
+            v = (int16_t)((v / 5) * 5);
             g_state.end_vol_pct = (uint8_t)v;
+            preview_end_volume_level();
             break;
         }
         case AlarmField::END_SUN: {
-            int16_t v = (int16_t)g_state.end_sun_pct + (int16_t)delta;
+            int16_t v = (int16_t)g_state.end_sun_pct + (int16_t)(delta * 5);
             if (v < 0) v = 0;
             if (v > 100) v = 100;
+            v = (int16_t)((v / 5) * 5);
             g_state.end_sun_pct = (uint8_t)v;
+            preview_end_sun_level();
             break;
         }
         case AlarmField::VOL_RAMP: {
@@ -623,27 +720,31 @@ static void render_fields() {
             switch (field) {
                 case AlarmField::HOUR:
                     arc_min = 0;
-                    arc_max = 11;
+                    arc_max = 12;
                     arc_value = (int32_t)(g_state.hour % 12);
+                    lv_arc_set_rotation(g_value_arcs[slot], 270);
                     std::snprintf(value, sizeof(value), "%02u", (unsigned)g_state.hour);
                     break;
                 case AlarmField::MINUTE:
                     arc_min = 0;
                     arc_max = 59;
                     arc_value = g_state.minute;
+                    lv_arc_set_rotation(g_value_arcs[slot], 270);
                     std::snprintf(value, sizeof(value), "%02u", (unsigned)g_state.minute);
                     break;
                 case AlarmField::END_VOL:
                     arc_min = 0;
                     arc_max = 100;
                     arc_value = g_state.end_vol_pct;
-                    std::snprintf(value, sizeof(value), "%u%%", (unsigned)g_state.end_vol_pct);
+                    lv_arc_set_rotation(g_value_arcs[slot], 270);
+                    std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.end_vol_pct);
                     break;
                 case AlarmField::END_SUN:
                     arc_min = 0;
                     arc_max = 100;
                     arc_value = g_state.end_sun_pct;
-                    std::snprintf(value, sizeof(value), "%u%%", (unsigned)g_state.end_sun_pct);
+                    lv_arc_set_rotation(g_value_arcs[slot], 270);
+                    std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.end_sun_pct);
                     break;
                 default:
                     break;
@@ -1016,6 +1117,7 @@ static void build_sound_screen() {
 }
 
 static void open_repeat_window() {
+    stop_realtime_preview();
     g_repeat_open = true;
     g_repeat_focus = 0;
     g_repeat_edit_mask = g_state.repeat_mask;
@@ -1025,6 +1127,7 @@ static void open_repeat_window() {
 }
 
 static void close_repeat_window(bool apply_changes) {
+    hide_header_flash();
     if (apply_changes) {
         g_state.repeat_mask = g_repeat_edit_mask;
         repeat_mask_normalize();
@@ -1035,6 +1138,7 @@ static void close_repeat_window(bool apply_changes) {
 }
 
 static void open_sound_window() {
+    stop_realtime_preview();
     g_sound_state.open = true;
     g_sound_accept_pending = false;
     if (g_sound_accept_timer) {
@@ -1067,6 +1171,7 @@ static void open_sound_window() {
 }
 
 static void close_sound_window(bool apply_changes) {
+    hide_header_flash();
     g_sound_accept_pending = false;
     if (g_sound_accept_timer) {
         lv_timer_del(g_sound_accept_timer);
@@ -1148,8 +1253,10 @@ void ui_alarm_on_enter() {
     g_window_start = 0;
     g_repeat_open = false;
     g_sound_state.open = false;
+    stop_realtime_preview();
     repeat_mask_normalize();
     audio_manager_stop_preview();
+    hide_header_flash();
     render_fields();
 }
 
@@ -1276,6 +1383,7 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
     }
 
     if (enc1_pressed) {
+        stop_realtime_preview();
         trigger_header_flash(false);
         queue_action_after_flash(UiAlarmAction::CANCEL);
         return UiAlarmAction::NONE;
@@ -1305,6 +1413,7 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
     }
 
     if (enc2_pressed) {
+        stop_realtime_preview();
         trigger_header_flash(true);
         save_state();
         queue_action_after_flash(UiAlarmAction::ACCEPT);

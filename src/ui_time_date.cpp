@@ -223,9 +223,11 @@ static void update_widgets() {
         field_value_and_range(i, value, min_v, max_v, text, sizeof(text));
 
         if ((TimeField)i == TimeField::HOUR) {
-            lv_arc_set_range(g_arc_widgets[i], 0, 11);
+            lv_arc_set_rotation(g_arc_widgets[i], 270);
+            lv_arc_set_range(g_arc_widgets[i], 0, 12);
             lv_arc_set_value(g_arc_widgets[i], value % 12);
         } else {
+            lv_arc_set_rotation(g_arc_widgets[i], 270);
             lv_arc_set_range(g_arc_widgets[i], min_v, max_v);
             lv_arc_set_value(g_arc_widgets[i], value);
         }

@@ -54,6 +54,7 @@ void storage_manager_load_display() {
     settings.manual_brightness  = prefs.getUChar("manual_br",  settings.manual_brightness);
     settings.auto_brightness    = prefs.getBool ("auto_br",    settings.auto_brightness);
     settings.boost_brightness   = prefs.getUChar("boost_br",   settings.boost_brightness);
+    settings.ldr_max_raw        = prefs.getFloat("ldr_max_raw", settings.ldr_max_raw);
 }
 
 static void save_display() {
@@ -61,6 +62,7 @@ static void save_display() {
     prefs.putUChar("manual_br",  settings.manual_brightness);
     prefs.putBool ("auto_br",    settings.auto_brightness);
     prefs.putUChar("boost_br",   settings.boost_brightness);
+    prefs.putFloat("ldr_max_raw", settings.ldr_max_raw);
 }
 
 static void load_leds() {
@@ -98,6 +100,7 @@ void storage_manager_init() {
     settings.manual_brightness    = 128;
     settings.auto_brightness      = true;
     settings.boost_brightness     = 200;
+    settings.ldr_max_raw          = 2500.0f;
     settings.led_front_brightness = 128;
     settings.led_back_brightness  = 128;
     settings.led_front_enabled    = false;

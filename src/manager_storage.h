@@ -25,6 +25,7 @@ struct AppSettings {
     uint8_t  manual_brightness;      // 0–255
     bool     auto_brightness;
     uint8_t  boost_brightness;       // 0–255
+    float    ldr_max_raw;            // ADC scale ceiling for auto brightness mapping
 
     // LEDs (last known state — restored on boot)
     uint8_t  led_front_brightness;   // 0–255

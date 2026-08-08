@@ -1,5 +1,6 @@
 #include "ui_display_menu.h"
 
+#include "manager_led.h"
 #include "manager_storage.h"
 
 #include <cstdio>
@@ -11,14 +12,21 @@ static constexpr int DISP_H = 142;
 static constexpr int HEADER_H = 34;
 static constexpr int CONTENT_Y = 36;
 static constexpr int CONTENT_H = DISP_H - CONTENT_Y;
-static constexpr int COL_COUNT = 4;
+static constexpr uint8_t FIELD_COUNT = 5;
+static constexpr uint8_t VISIBLE_COLS = 4;
+static constexpr uint8_t LEVEL_COUNT = (FIELD_COUNT + VISIBLE_COLS - 1) / VISIBLE_COLS;
+static constexpr int PAGE_DOT_W = 16;
 static constexpr int CONTENT_PAD_X = 6;
 static constexpr int CONTENT_GAP_X = 4;
-static constexpr int COL_W = (DISP_W - (2 * CONTENT_PAD_X) - ((COL_COUNT - 1) * CONTENT_GAP_X)) / COL_COUNT;
+static constexpr int MAIN_COL_START_X = CONTENT_PAD_X + PAGE_DOT_W;
+static constexpr int MAIN_COL_AVAILABLE_W = DISP_W - MAIN_COL_START_X - CONTENT_PAD_X;
+static constexpr int COL_W = (MAIN_COL_AVAILABLE_W - ((VISIBLE_COLS - 1) * CONTENT_GAP_X)) / VISIBLE_COLS;
 static constexpr int TITLE_H = 34;
 static constexpr int VALUE_W = 84;
 static constexpr int VALUE_H = 70;
 static constexpr int VALUE_Y = 32;
+
+static constexpr uint32_t PREVIEW_TIMEOUT_MS = 2000;
 
 static lv_obj_t *g_screen = nullptr;
 static lv_obj_t *g_header_cancel_bg = nullptr;
@@ -27,13 +35,23 @@ static lv_timer_t *g_header_flash_timer = nullptr;
 static lv_timer_t *g_pending_action_timer = nullptr;
 static UiDisplayAction g_pending_action = UiDisplayAction::NONE;
 static UiDisplayAction g_deferred_action = UiDisplayAction::NONE;
-static lv_obj_t *g_value_widgets[COL_COUNT] = {nullptr, nullptr, nullptr, nullptr};
-static lv_obj_t *g_toggle_labels[2] = {nullptr, nullptr};
-static lv_obj_t *g_toggle_widgets[2] = {nullptr, nullptr};
-static lv_obj_t *g_arc_widgets[2] = {nullptr, nullptr};
-static lv_obj_t *g_arc_labels[2] = {nullptr, nullptr};
 
-static UiDisplayState g_state = {false, 50, true, 78, UiDisplayField::MIN_BRIGHTNESS};
+static lv_obj_t *g_value_widgets[VISIBLE_COLS] = {nullptr};
+static lv_obj_t *g_title_labels[VISIBLE_COLS] = {nullptr};
+static lv_obj_t *g_value_labels[VISIBLE_COLS] = {nullptr};
+static lv_obj_t *g_value_arcs[VISIBLE_COLS] = {nullptr};
+static lv_obj_t *g_level_dots[LEVEL_COUNT] = {nullptr};
+
+static lv_timer_t *g_realtime_preview_timer = nullptr;
+static bool g_preview_active = false;
+static uint8_t g_preview_front_brightness = 0;
+static uint8_t g_preview_back_brightness = 0;
+static bool g_preview_front_on = false;
+static bool g_preview_back_on = false;
+
+static uint8_t g_window_start = 0;
+
+static UiDisplayState g_state = {false, 50, true, 78, 2500, UiDisplayField::MIN_BRIGHTNESS};
 
 static void hide_header_flash() {
     if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
@@ -103,18 +121,258 @@ static uint8_t percent_to_raw(uint8_t percent_value) {
 
 static void clamp_state() {
     const uint8_t minimum = minimum_percent();
-    if (g_state.manual_brightness_percent < minimum) {
-        g_state.manual_brightness_percent = minimum;
+    if (g_state.manual_brightness_percent < minimum) g_state.manual_brightness_percent = minimum;
+    if (g_state.boost_brightness_percent < minimum) g_state.boost_brightness_percent = minimum;
+    if (g_state.manual_brightness_percent > 100) g_state.manual_brightness_percent = 100;
+    if (g_state.boost_brightness_percent > 100) g_state.boost_brightness_percent = 100;
+    if (g_state.ldr_max_raw > 4095) g_state.ldr_max_raw = 4095;
+}
+
+static const char *field_title(uint8_t idx) {
+    static const char *titles[FIELD_COUNT] = {
+        "Minimum\nBrightness", "Manual\nBrightness", "Auto\nBrightness", "Display\nBoost", "LDR\nMax Raw"
+    };
+    return titles[idx];
+}
+
+static bool field_uses_arc(UiDisplayField field) {
+    return field == UiDisplayField::MANUAL_BRIGHTNESS || field == UiDisplayField::DISPLAY_BOOST;
+}
+
+static uint8_t current_level() {
+    return (uint8_t)(selected_index() / VISIBLE_COLS);
+}
+
+static void update_window_for_selection() {
+    g_window_start = (uint8_t)(current_level() * VISIBLE_COLS);
+}
+
+static void update_level_dots() {
+    const uint8_t active = current_level();
+    for (uint8_t i = 0; i < LEVEL_COUNT; ++i) {
+        if (!g_level_dots[i]) continue;
+        lv_obj_set_style_bg_color(g_level_dots[i],
+                                  (i == active) ? lv_color_white() : lv_color_make(0x42, 0x42, 0x42),
+                                  LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(g_level_dots[i], LV_OPA_COVER, LV_PART_MAIN);
     }
-    if (g_state.boost_brightness_percent < minimum) {
-        g_state.boost_brightness_percent = minimum;
+}
+
+static void update_focus() {
+    const uint8_t sel = selected_index();
+    for (uint8_t i = 0; i < VISIBLE_COLS; ++i) {
+        if (!g_value_widgets[i]) continue;
+        const uint8_t idx = (uint8_t)(g_window_start + i);
+        if (idx == sel) lv_obj_add_state(g_value_widgets[i], LV_STATE_FOCUSED);
+        else lv_obj_clear_state(g_value_widgets[i], LV_STATE_FOCUSED);
     }
-    if (g_state.manual_brightness_percent > 100) {
-        g_state.manual_brightness_percent = 100;
+    update_level_dots();
+}
+
+static void stop_realtime_preview();
+
+static void realtime_preview_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    g_realtime_preview_timer = nullptr;
+    stop_realtime_preview();
+}
+
+static void restart_realtime_preview_timer() {
+    if (g_realtime_preview_timer) {
+        lv_timer_reset(g_realtime_preview_timer);
+        return;
     }
-    if (g_state.boost_brightness_percent > 100) {
-        g_state.boost_brightness_percent = 100;
+    g_realtime_preview_timer = lv_timer_create(realtime_preview_timer_cb, PREVIEW_TIMEOUT_MS, nullptr);
+    lv_timer_set_repeat_count(g_realtime_preview_timer, 1);
+}
+
+static void start_led_preview_if_needed() {
+    if (g_preview_active) return;
+
+    g_preview_front_brightness = led_manager_get_front();
+    g_preview_back_brightness = led_manager_get_back();
+    g_preview_front_on = led_manager_is_front_on();
+    g_preview_back_on = led_manager_is_back_on();
+
+    if (!g_preview_front_on) {
+        led_manager_toggle_front();
     }
+    if (!g_preview_back_on) {
+        led_manager_toggle_back();
+    }
+
+    g_preview_active = true;
+}
+
+static void apply_manual_led_preview() {
+    start_led_preview_if_needed();
+
+    const uint8_t raw = percent_to_raw(g_state.manual_brightness_percent);
+    led_manager_set_front(raw);
+    led_manager_set_back(raw);
+
+    restart_realtime_preview_timer();
+}
+
+static void stop_realtime_preview() {
+    if (g_realtime_preview_timer) {
+        lv_timer_del(g_realtime_preview_timer);
+        g_realtime_preview_timer = nullptr;
+    }
+
+    if (!g_preview_active) return;
+
+    led_manager_set_front(g_preview_front_brightness);
+    led_manager_set_back(g_preview_back_brightness);
+
+    const bool front_now = led_manager_is_front_on();
+    const bool back_now = led_manager_is_back_on();
+
+    if (front_now != g_preview_front_on) {
+        led_manager_toggle_front();
+    }
+    if (back_now != g_preview_back_on) {
+        led_manager_toggle_back();
+    }
+
+    g_preview_active = false;
+}
+
+static void update_widgets() {
+    clamp_state();
+    update_window_for_selection();
+
+    for (uint8_t slot = 0; slot < VISIBLE_COLS; ++slot) {
+        const uint8_t idx = (uint8_t)(g_window_start + slot);
+        if (!g_value_widgets[slot] || !g_title_labels[slot] || !g_value_labels[slot] || !g_value_arcs[slot]) continue;
+
+        if (idx >= FIELD_COUNT) {
+            lv_obj_set_hidden(g_value_widgets[slot], true);
+            lv_obj_set_hidden(g_title_labels[slot], true);
+            lv_obj_set_hidden(g_value_labels[slot], true);
+            lv_obj_set_hidden(g_value_arcs[slot], true);
+            lv_label_set_text(g_title_labels[slot], "");
+            lv_label_set_text(g_value_labels[slot], "");
+            continue;
+        }
+
+        lv_obj_set_hidden(g_value_widgets[slot], false);
+        lv_obj_set_hidden(g_title_labels[slot], false);
+        lv_obj_set_hidden(g_value_labels[slot], false);
+        lv_obj_set_hidden(g_value_arcs[slot], false);
+        lv_label_set_text(g_title_labels[slot], field_title(idx));
+
+        const UiDisplayField field = (UiDisplayField)idx;
+        const bool use_arc = field_uses_arc(field);
+        lv_obj_set_hidden(g_value_arcs[slot], !use_arc);
+
+        lv_obj_set_style_bg_color(g_value_widgets[slot], lv_color_make(0x16, 0x16, 0x16), LV_PART_MAIN);
+
+        char value[20];
+        if (use_arc) {
+            const uint8_t pct = (field == UiDisplayField::MANUAL_BRIGHTNESS)
+                                    ? g_state.manual_brightness_percent
+                                    : g_state.boost_brightness_percent;
+            lv_arc_set_range(g_value_arcs[slot], 0, 100);
+            lv_arc_set_rotation(g_value_arcs[slot], 270);
+            lv_arc_set_value(g_value_arcs[slot], pct);
+            std::snprintf(value, sizeof(value), "%u", (unsigned)pct);
+            lv_obj_set_style_text_font(g_value_labels[slot], &lv_font_montserrat_20, 0);
+            lv_obj_set_style_text_color(g_value_labels[slot], lv_color_white(), 0);
+            lv_label_set_text(g_value_labels[slot], value);
+        } else {
+            switch (field) {
+                case UiDisplayField::MIN_BRIGHTNESS:
+                    std::snprintf(value, sizeof(value), "%s", g_state.min_brightness_off ? "OFF" : "LOW");
+                    break;
+                case UiDisplayField::AUTO_BRIGHTNESS:
+                    std::snprintf(value, sizeof(value), "%s", g_state.auto_brightness ? "ON" : "OFF");
+                    lv_obj_set_style_bg_color(g_value_widgets[slot],
+                                              g_state.auto_brightness ? lv_color_make(0x00, 0x9A, 0x3A)
+                                                                      : lv_color_make(0xB0, 0x20, 0x20),
+                                              LV_PART_MAIN);
+                    break;
+                case UiDisplayField::LDR_MAX_RAW:
+                    std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.ldr_max_raw);
+                    break;
+                default:
+                    value[0] = '\0';
+                    break;
+            }
+            lv_obj_set_style_text_font(g_value_labels[slot],
+                                       field == UiDisplayField::LDR_MAX_RAW ? &lv_font_montserrat_16
+                                                                             : &lv_font_montserrat_20,
+                                       0);
+            lv_obj_set_style_text_color(g_value_labels[slot], lv_color_white(), 0);
+            lv_label_set_text(g_value_labels[slot], value);
+        }
+    }
+
+    update_focus();
+}
+
+static void save_state_to_storage() {
+    AppSettings &settings = storage_manager_get();
+    settings.min_brightness_off = g_state.min_brightness_off;
+    settings.manual_brightness = percent_to_raw(g_state.manual_brightness_percent);
+    settings.auto_brightness = g_state.auto_brightness;
+    settings.boost_brightness = percent_to_raw(g_state.boost_brightness_percent);
+    settings.ldr_max_raw = (float)g_state.ldr_max_raw;
+    storage_manager_save_display();
+}
+
+static void adjust_selected_field(int32_t delta) {
+    if (delta == 0) return;
+
+    const uint8_t magnitude = (uint8_t)((delta > 0) ? delta : -delta);
+    const uint8_t minimum = minimum_percent();
+
+    switch (g_state.selected_field) {
+        case UiDisplayField::MIN_BRIGHTNESS:
+            g_state.min_brightness_off = delta < 0;
+            break;
+
+        case UiDisplayField::MANUAL_BRIGHTNESS:
+            if (delta > 0) {
+                uint16_t next = (uint16_t)g_state.manual_brightness_percent + (uint16_t)(magnitude * 5U);
+                g_state.manual_brightness_percent = (next > 100) ? 100 : (uint8_t)next;
+            } else {
+                int16_t next = (int16_t)g_state.manual_brightness_percent - (int16_t)(magnitude * 5U);
+                g_state.manual_brightness_percent = (next < minimum) ? minimum : (uint8_t)next;
+            }
+            g_state.manual_brightness_percent = (uint8_t)((g_state.manual_brightness_percent / 5U) * 5U);
+            if (g_state.manual_brightness_percent < minimum) g_state.manual_brightness_percent = minimum;
+            apply_manual_led_preview();
+            break;
+
+        case UiDisplayField::AUTO_BRIGHTNESS:
+            g_state.auto_brightness = delta > 0;
+            break;
+
+        case UiDisplayField::DISPLAY_BOOST:
+            if (delta > 0) {
+                uint16_t next = (uint16_t)g_state.boost_brightness_percent + (uint16_t)(magnitude * 5U);
+                g_state.boost_brightness_percent = (next > 100) ? 100 : (uint8_t)next;
+            } else {
+                int16_t next = (int16_t)g_state.boost_brightness_percent - (int16_t)(magnitude * 5U);
+                g_state.boost_brightness_percent = (next < minimum) ? minimum : (uint8_t)next;
+            }
+            g_state.boost_brightness_percent = (uint8_t)((g_state.boost_brightness_percent / 5U) * 5U);
+            if (g_state.boost_brightness_percent < minimum) g_state.boost_brightness_percent = minimum;
+            break;
+
+        case UiDisplayField::LDR_MAX_RAW: {
+            const int16_t step = 25;
+            int32_t next = (int32_t)g_state.ldr_max_raw + ((delta > 0) ? (int32_t)(step * magnitude)
+                                                                         : -(int32_t)(step * magnitude));
+            if (next < 0) next = 0;
+            if (next > 4095) next = 4095;
+            g_state.ldr_max_raw = (uint16_t)next;
+            break;
+        }
+    }
+
+    clamp_state();
 }
 
 static void apply_header_base(lv_obj_t *screen, const char *title) {
@@ -202,103 +460,7 @@ static lv_obj_t *create_value_shell(lv_obj_t *parent, int x) {
     return widget;
 }
 
-static void update_focus() {
-    for (uint8_t i = 0; i < COL_COUNT; ++i) {
-        if (!g_value_widgets[i]) continue;
-        if (i == selected_index()) lv_obj_add_state(g_value_widgets[i], LV_STATE_FOCUSED);
-        else lv_obj_clear_state(g_value_widgets[i], LV_STATE_FOCUSED);
-    }
-}
-
-static void update_widgets() {
-    clamp_state();
-
-    if (g_toggle_labels[0]) {
-        lv_label_set_text(g_toggle_labels[0], g_state.min_brightness_off ? "OFF" : "LOW");
-    }
-
-    if (g_toggle_labels[1]) {
-        lv_label_set_text(g_toggle_labels[1], g_state.auto_brightness ? "ON" : "OFF");
-        lv_obj_set_style_text_color(g_toggle_labels[1], lv_color_white(), 0);
-    }
-
-    if (g_toggle_widgets[1]) {
-        lv_obj_set_style_bg_color(g_toggle_widgets[1],
-                                  g_state.auto_brightness ? lv_color_make(0x00, 0x9A, 0x3A)
-                                                          : lv_color_make(0xB0, 0x20, 0x20),
-                                  LV_PART_MAIN);
-    }
-
-    char buf[8];
-
-    if (g_arc_widgets[0] && g_arc_labels[0]) {
-        lv_arc_set_value(g_arc_widgets[0], g_state.manual_brightness_percent);
-        std::snprintf(buf, sizeof(buf), "%u", g_state.manual_brightness_percent);
-        lv_label_set_text(g_arc_labels[0], buf);
-    }
-
-    if (g_arc_widgets[1] && g_arc_labels[1]) {
-        lv_arc_set_value(g_arc_widgets[1], g_state.boost_brightness_percent);
-        std::snprintf(buf, sizeof(buf), "%u", g_state.boost_brightness_percent);
-        lv_label_set_text(g_arc_labels[1], buf);
-    }
-
-    update_focus();
-}
-
-static void save_state_to_storage() {
-    AppSettings &settings = storage_manager_get();
-    settings.min_brightness_off = g_state.min_brightness_off;
-    settings.manual_brightness = percent_to_raw(g_state.manual_brightness_percent);
-    settings.auto_brightness = g_state.auto_brightness;
-    settings.boost_brightness = percent_to_raw(g_state.boost_brightness_percent);
-    storage_manager_save_display();
-}
-
-static void adjust_selected_field(int32_t delta) {
-    if (delta == 0) return;
-
-    const uint8_t magnitude = (uint8_t)((delta > 0) ? delta : -delta);
-    const uint8_t minimum = minimum_percent();
-
-    switch (g_state.selected_field) {
-        case UiDisplayField::MIN_BRIGHTNESS:
-            g_state.min_brightness_off = delta < 0;
-            break;
-
-        case UiDisplayField::MANUAL_BRIGHTNESS:
-            if (delta > 0) {
-                uint16_t next = (uint16_t)g_state.manual_brightness_percent + magnitude;
-                g_state.manual_brightness_percent = (next > 100) ? 100 : (uint8_t)next;
-            } else {
-                int16_t next = (int16_t)g_state.manual_brightness_percent - magnitude;
-                g_state.manual_brightness_percent = (next < minimum) ? minimum : (uint8_t)next;
-            }
-            break;
-
-        case UiDisplayField::AUTO_BRIGHTNESS:
-            g_state.auto_brightness = delta > 0;
-            break;
-
-        case UiDisplayField::DISPLAY_BOOST:
-            if (delta > 0) {
-                uint16_t next = (uint16_t)g_state.boost_brightness_percent + magnitude;
-                g_state.boost_brightness_percent = (next > 100) ? 100 : (uint8_t)next;
-            } else {
-                int16_t next = (int16_t)g_state.boost_brightness_percent - magnitude;
-                g_state.boost_brightness_percent = (next < minimum) ? minimum : (uint8_t)next;
-            }
-            break;
-    }
-
-    clamp_state();
-}
-
-static lv_obj_t *create_column(lv_obj_t *parent,
-                               int x,
-                               const char *title,
-                               uint8_t idx,
-                               bool use_arc) {
+static void create_column(lv_obj_t *parent, int x, uint8_t slot) {
     lv_obj_t *col = lv_obj_create(parent);
     lv_obj_set_size(col, COL_W, CONTENT_H);
     lv_obj_set_pos(col, x, 0);
@@ -308,7 +470,7 @@ static lv_obj_t *create_column(lv_obj_t *parent,
     lv_obj_set_scrollable(col, false);
 
     lv_obj_t *title_label = lv_label_create(col);
-    lv_label_set_text(title_label, title);
+    lv_label_set_text(title_label, "-");
     lv_obj_set_size(title_label, COL_W, TITLE_H);
     lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(title_label, lv_color_make(0xD0, 0xD0, 0xD0), 0);
@@ -318,50 +480,52 @@ static lv_obj_t *create_column(lv_obj_t *parent,
     lv_obj_set_click_focusable(title_label, false);
 
     lv_obj_t *widget = create_value_shell(col, 0);
-    g_value_widgets[idx] = widget;
 
-    if (use_arc) {
-        const uint8_t arc_idx = (idx == (uint8_t)UiDisplayField::MANUAL_BRIGHTNESS) ? 0 : 1;
+    lv_obj_t *arc = lv_arc_create(widget);
+    lv_obj_set_size(arc, 58, 58);
+    lv_obj_center(arc);
+    lv_arc_set_rotation(arc, 270);
+    lv_arc_set_bg_angles(arc, 0, 360);
+    lv_arc_set_range(arc, 0, 100);
+    lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
+    lv_obj_set_style_arc_width(arc, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(arc, lv_color_make(0x34, 0x34, 0x34), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(arc, lv_color_make(0x4D, 0xB1, 0xFF), LV_PART_INDICATOR);
+    lv_obj_remove_style(arc, nullptr, LV_PART_KNOB);
+    lv_obj_set_clickable(arc, false);
+    lv_obj_set_scrollable(arc, false);
 
-        lv_obj_t *arc = lv_arc_create(widget);
-        lv_obj_set_size(arc, 58, 58);
-        lv_obj_center(arc);
-        lv_arc_set_rotation(arc, 270);
-        lv_arc_set_bg_angles(arc, 0, 360);
-        lv_arc_set_range(arc, 0, 100);
-        lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
-        lv_obj_set_style_arc_width(arc, 8, LV_PART_MAIN);
-        lv_obj_set_style_arc_color(arc, lv_color_make(0x34, 0x34, 0x34), LV_PART_MAIN);
-        lv_obj_set_style_arc_width(arc, 8, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_color(arc, lv_color_make(0x4D, 0xB1, 0xFF), LV_PART_INDICATOR);
-        lv_obj_remove_style(arc, nullptr, LV_PART_KNOB);
-        lv_obj_set_clickable(arc, false);
-        lv_obj_set_scrollable(arc, false);
-        g_arc_widgets[arc_idx] = arc;
+    lv_obj_t *value_label = lv_label_create(widget);
+    lv_label_set_text(value_label, "-");
+    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(value_label, lv_color_white(), 0);
+    lv_obj_set_width(value_label, VALUE_W - 8);
+    lv_obj_set_style_text_align(value_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(value_label);
 
-        lv_obj_t *value_label = lv_label_create(widget);
-        lv_label_set_text(value_label, "0");
-        lv_obj_set_style_text_font(value_label, &lv_font_montserrat_20, 0);
-        lv_obj_set_style_text_color(value_label, lv_color_white(), 0);
-        lv_obj_center(value_label);
-        lv_obj_set_clickable(value_label, false);
-        lv_obj_set_click_focusable(value_label, false);
-        g_arc_labels[arc_idx] = value_label;
-    } else {
-        const uint8_t toggle_idx = (idx == (uint8_t)UiDisplayField::MIN_BRIGHTNESS) ? 0 : 1;
+    g_value_widgets[slot] = widget;
+    g_title_labels[slot] = title_label;
+    g_value_labels[slot] = value_label;
+    g_value_arcs[slot] = arc;
+}
 
-        lv_obj_t *value_label = lv_label_create(widget);
-        lv_label_set_text(value_label, "OFF");
-        lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(value_label, lv_color_white(), 0);
-        lv_obj_center(value_label);
-        lv_obj_set_clickable(value_label, false);
-        lv_obj_set_click_focusable(value_label, false);
-        g_toggle_labels[toggle_idx] = value_label;
-        g_toggle_widgets[toggle_idx] = widget;
+static void create_level_dots(lv_obj_t *parent) {
+    const int dot_h = 8;
+    const int gap = 12;
+    const int total_h = (LEVEL_COUNT * dot_h) + ((LEVEL_COUNT - 1) * gap);
+    const int start_y = (CONTENT_H - total_h) / 2;
+
+    for (uint8_t i = 0; i < LEVEL_COUNT; ++i) {
+        lv_obj_t *dot = lv_obj_create(parent);
+        lv_obj_set_size(dot, 8, 8);
+        lv_obj_set_pos(dot, 6, start_y + i * (dot_h + gap));
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_set_style_border_width(dot, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(dot, 0, LV_PART_MAIN);
+        lv_obj_set_scrollable(dot, false);
+        g_level_dots[i] = dot;
     }
-
-    return col;
 }
 
 } // namespace
@@ -386,10 +550,12 @@ void ui_display_init() {
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_set_scrollable(content, false);
 
-    create_column(content, CONTENT_PAD_X + (0 * (COL_W + CONTENT_GAP_X)), "Minimum\nBrightness", (uint8_t)UiDisplayField::MIN_BRIGHTNESS, false);
-    create_column(content, CONTENT_PAD_X + (1 * (COL_W + CONTENT_GAP_X)), "Manual\nBrightness", (uint8_t)UiDisplayField::MANUAL_BRIGHTNESS, true);
-    create_column(content, CONTENT_PAD_X + (2 * (COL_W + CONTENT_GAP_X)), "Auto\nBrightness", (uint8_t)UiDisplayField::AUTO_BRIGHTNESS, false);
-    create_column(content, CONTENT_PAD_X + (3 * (COL_W + CONTENT_GAP_X)), "Display\nBoost", (uint8_t)UiDisplayField::DISPLAY_BOOST, true);
+    create_level_dots(content);
+
+    for (uint8_t i = 0; i < VISIBLE_COLS; ++i) {
+        const int x = MAIN_COL_START_X + i * (COL_W + CONTENT_GAP_X);
+        create_column(content, x, i);
+    }
 
     update_widgets();
 }
@@ -404,7 +570,11 @@ void ui_display_on_enter() {
     g_state.manual_brightness_percent = raw_to_percent(settings.manual_brightness);
     g_state.auto_brightness = settings.auto_brightness;
     g_state.boost_brightness_percent = raw_to_percent(settings.boost_brightness);
+    g_state.ldr_max_raw = (uint16_t)((settings.ldr_max_raw < 0.0f) ? 0.0f
+                                                               : ((settings.ldr_max_raw > 4095.0f) ? 4095.0f
+                                                                                                     : settings.ldr_max_raw));
     g_state.selected_field = UiDisplayField::MIN_BRIGHTNESS;
+    stop_realtime_preview();
     update_widgets();
 }
 
@@ -423,6 +593,7 @@ UiDisplayAction ui_display_handle_inputs(int32_t enc1_delta,
     }
 
     if (enc1_pressed) {
+        stop_realtime_preview();
         trigger_header_flash(false);
         queue_action_after_flash(UiDisplayAction::CANCEL);
         return UiDisplayAction::NONE;
@@ -433,8 +604,8 @@ UiDisplayAction ui_display_handle_inputs(int32_t enc1_delta,
         int32_t steps = (enc1_delta > 0) ? enc1_delta : -enc1_delta;
         while (steps-- > 0) {
             int16_t next = (int16_t)selected_index() + direction;
-            if (next < 0) next = COL_COUNT - 1;
-            if (next >= COL_COUNT) next = 0;
+            if (next < 0) next = FIELD_COUNT - 1;
+            if (next >= FIELD_COUNT) next = 0;
             g_state.selected_field = (UiDisplayField)next;
         }
     }
@@ -446,6 +617,7 @@ UiDisplayAction ui_display_handle_inputs(int32_t enc1_delta,
     update_widgets();
 
     if (enc2_pressed) {
+        stop_realtime_preview();
         trigger_header_flash(true);
         save_state_to_storage();
         queue_action_after_flash(UiDisplayAction::ACCEPT);

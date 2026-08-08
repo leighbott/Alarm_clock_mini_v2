@@ -1,6 +1,7 @@
 #include "ui_settings_menu.h"
 #include "ui_alarm_menu.h"
 #include "ui_display_menu.h"
+#include "ui_other_menu.h"
 #include "ui_time_date.h"
 
 #include <lvgl.h>
@@ -33,6 +34,12 @@ static lv_obj_t *g_header_accept_bg = nullptr;
 static lv_timer_t *g_header_flash_timer = nullptr;
 static lv_timer_t *g_home_route_timer = nullptr;
 static bool g_route_home_after_flash = false;
+static lv_obj_t *g_other_cancel_bg = nullptr;
+static lv_obj_t *g_other_accept_bg = nullptr;
+static lv_timer_t *g_other_flash_timer = nullptr;
+static lv_timer_t *g_other_route_timer = nullptr;
+static bool g_other_route_pending = false;
+static bool g_other_screen_ready = false;
 static lv_obj_t *g_tiles[4] = {nullptr, nullptr, nullptr, nullptr};
 static uint8_t g_selected_tile = 0;
 
@@ -44,6 +51,7 @@ static ChildScreen g_children[4] = {
 };
 
 static void route_to_home();
+static void route_to_main_settings();
 
 static void hide_header_flash() {
     if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
@@ -82,6 +90,47 @@ static void queue_route_home_after_flash() {
     if (g_home_route_timer) lv_timer_del(g_home_route_timer);
     g_home_route_timer = lv_timer_create(home_route_timer_cb, 120, nullptr);
     lv_timer_set_repeat_count(g_home_route_timer, 1);
+}
+
+static void hide_other_flash() {
+    if (g_other_cancel_bg) lv_obj_set_style_bg_opa(g_other_cancel_bg, LV_OPA_TRANSP, 0);
+    if (g_other_accept_bg) lv_obj_set_style_bg_opa(g_other_accept_bg, LV_OPA_TRANSP, 0);
+}
+
+static void other_flash_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    hide_other_flash();
+    g_other_flash_timer = nullptr;
+}
+
+static void trigger_other_flash(bool accept) {
+    hide_other_flash();
+    if (accept) {
+        if (g_other_accept_bg) lv_obj_set_style_bg_opa(g_other_accept_bg, LV_OPA_COVER, 0);
+    } else {
+        if (g_other_cancel_bg) lv_obj_set_style_bg_opa(g_other_cancel_bg, LV_OPA_COVER, 0);
+    }
+
+    if (g_other_flash_timer) lv_timer_del(g_other_flash_timer);
+    g_other_flash_timer = lv_timer_create(other_flash_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_other_flash_timer, 1);
+}
+
+static void other_route_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    g_other_route_timer = nullptr;
+    if (!g_other_route_pending) return;
+
+    g_other_route_pending = false;
+    route_to_main_settings();
+}
+
+static void queue_other_route_after_flash(bool accept) {
+    g_other_route_pending = true;
+    (void)accept;
+    if (g_other_route_timer) lv_timer_del(g_other_route_timer);
+    g_other_route_timer = lv_timer_create(other_route_timer_cb, 120, nullptr);
+    lv_timer_set_repeat_count(g_other_route_timer, 1);
 }
 
 static void apply_header_base(lv_obj_t *screen, const char *title) {
@@ -221,7 +270,9 @@ static void build_main_settings_screen() {
     update_tile_focus();
 }
 
-static lv_obj_t *build_child_screen(const char *title) {
+static lv_obj_t *build_child_screen(const char *title,
+                                    lv_obj_t **out_cancel_bg,
+                                    lv_obj_t **out_accept_bg) {
     lv_obj_t *screen = lv_obj_create(nullptr);
     lv_obj_set_size(screen, DISP_W, DISP_H);
     lv_obj_set_style_pad_all(screen, 0, 0);
@@ -229,6 +280,15 @@ static lv_obj_t *build_child_screen(const char *title) {
     lv_obj_set_scrollable(screen, false);
 
     apply_header_base(screen, title);
+
+    if (out_cancel_bg) *out_cancel_bg = nullptr;
+    if (out_accept_bg) *out_accept_bg = nullptr;
+
+    lv_obj_t *header = lv_obj_get_child(screen, 0);
+    if (header) {
+        if (out_cancel_bg) *out_cancel_bg = lv_obj_get_child(header, 0);
+        if (out_accept_bg) *out_accept_bg = lv_obj_get_child(header, 2);
+    }
 
     lv_obj_t *content = lv_obj_create(screen);
     lv_obj_set_size(content, DISP_W, CONTENT_H);
@@ -263,6 +323,11 @@ static void route_to_child(uint8_t idx) {
         g_children[idx].screen = ui_display_get_screen();
     }
 
+    if (g_children[idx].state == UiNavState::SETTINGS_OTHER && !g_children[idx].screen) {
+        ui_other_init();
+        g_children[idx].screen = ui_other_get_screen();
+    }
+
     if (!g_children[idx].screen) return;
 
     if (g_children[idx].state == UiNavState::SETTINGS_TIME_DATE) {
@@ -275,6 +340,10 @@ static void route_to_child(uint8_t idx) {
 
     if (g_children[idx].state == UiNavState::SETTINGS_DISPLAY) {
         ui_display_on_enter();
+    }
+
+    if (g_children[idx].state == UiNavState::SETTINGS_OTHER) {
+        ui_other_on_enter();
     }
 
     g_state = g_children[idx].state;
@@ -290,14 +359,20 @@ void settings_menu_init(lv_obj_t *home_screen) {
     build_main_settings_screen();
     ui_time_date_init();
     ui_alarm_init();
+    ui_other_init();
     g_children[1].screen = ui_alarm_get_screen();
     g_children[0].screen = ui_time_date_get_screen();
+    g_children[2].screen = ui_other_get_screen();
     for (uint8_t i = 1; i < 4; ++i) {
         if (g_children[i].state == UiNavState::SETTINGS_DISPLAY ||
             g_children[i].state == UiNavState::SETTINGS_ALARM) {
             continue;
         }
-        g_children[i].screen = build_child_screen(g_children[i].title);
+        if (g_children[i].state == UiNavState::SETTINGS_OTHER) {
+            g_children[i].screen = build_child_screen(g_children[i].title, &g_other_cancel_bg, &g_other_accept_bg);
+        } else {
+            g_children[i].screen = build_child_screen(g_children[i].title, nullptr, nullptr);
+        }
     }
 }
 
@@ -399,13 +474,23 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
             return;
         }
 
-        case UiNavState::SETTINGS_OTHER:
-            if (enc1_pressed || enc2_pressed) {
+        case UiNavState::SETTINGS_OTHER: {
+            if (g_other_route_pending || g_other_route_timer) {
+                return;
+            }
+
+            const UiOtherAction action = ui_other_handle_inputs(
+                enc1_delta,
+                enc2_delta,
+                enc1_pressed,
+                enc2_pressed);
+            if (action == UiOtherAction::CANCEL) {
+                route_to_main_settings();
+            } else if (action == UiOtherAction::ACCEPT) {
                 route_to_main_settings();
             }
-            (void)enc1_delta; // rotations intentionally ignored in child menus
-            (void)enc2_delta;
             return;
+        }
 
         case UiNavState::HOME:
         default:
