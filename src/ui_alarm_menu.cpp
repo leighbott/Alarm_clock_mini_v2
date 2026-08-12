@@ -366,13 +366,9 @@ static void preview_end_sun_level() {
 }
 
 static void preview_end_volume_level() {
-    if (g_state.sound_path[0] == '\0') {
-        copy_str(g_state.sound_path, sizeof(g_state.sound_path), "/test.mp3");
-    }
-
     if (!g_preview_audio_active) {
         g_preview_volume = audio_manager_get_volume();
-        audio_manager_play_loop(g_state.sound_path);
+        audio_manager_play_beep();
         g_preview_audio_active = true;
     }
 

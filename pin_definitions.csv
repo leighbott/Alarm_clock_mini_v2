@@ -4,17 +4,17 @@ Pin Label,Function,Notes
 3V,3.3V Power,
 RST,Board Reset,
 4,FREE,
-5,Display 2 — BLK,Backlight PWM
-6,Display 2 — RES,Reset
-7,Display 2 — DC,Data/Command
+5,FREE,
+6,FREE,Reset
+7,FREE,Data/Command
 15,LDR,
 16,LED Strip 1 — PWM,MOSFET gate
 17,LED Strip 2 — PWM,MOSFET gate
 18,SD CARD MISO,
-8,Display 2 — CS,Chip select
+8,FREE,Chip select
 3,FREE,Strapping pin
 46,FREE,Strapping pin
-9,Display 1 — BLK,Backlight PWM
+9,BL,Backlight PWM
 10,SDA / MOSI,Both Displays
 11,SCL / SCK / CLK,"Both displays, SD card"
 12,Display 1 — CS,Chip select

@@ -20,6 +20,7 @@ static char       preview_path[64] = {0};
 void audio_info(const char *)          {}
 void audio_id3data(const char *)       {}
 void audio_eof_mp3(const char *)       { playing = false; }
+void audio_eof_wav(const char *)       { playing = false; }
 void audio_showstation(const char *)   {}
 void audio_showstreamtitle(const char*) {}
 void audio_bitrate(const char *)       {}
