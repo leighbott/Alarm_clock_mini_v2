@@ -2,7 +2,9 @@
 #include "ui_alarm_menu.h"
 #include "ui_display_menu.h"
 #include "ui_other_menu.h"
+#include "ui_led_color_menu.h"
 #include "ui_time_date.h"
+#include "manager_led.h"
 
 #include <lvgl.h>
 
@@ -42,6 +44,7 @@ static bool g_other_route_pending = false;
 static bool g_other_screen_ready = false;
 static lv_obj_t *g_tiles[4] = {nullptr, nullptr, nullptr, nullptr};
 static uint8_t g_selected_tile = 0;
+static lv_obj_t *g_led_color_screen = nullptr;
 
 static ChildScreen g_children[4] = {
     {nullptr, UiNavState::SETTINGS_TIME_DATE, "Time & Date"},
@@ -52,6 +55,8 @@ static ChildScreen g_children[4] = {
 
 static void route_to_home();
 static void route_to_main_settings();
+static void route_to_other();
+static void route_to_led_color(LedStrip strip);
 
 static void hide_header_flash() {
     if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
@@ -315,6 +320,20 @@ static void route_to_main_settings() {
     lv_screen_load(g_main_screen);
 }
 
+static void route_to_other() {
+    if (!g_children[2].screen) return;
+    g_state = UiNavState::SETTINGS_OTHER;
+    ui_other_refresh_previews();
+    lv_screen_load(g_children[2].screen);
+}
+
+static void route_to_led_color(LedStrip strip) {
+    if (!g_led_color_screen) return;
+    ui_led_color_menu_on_enter(strip);
+    g_state = UiNavState::SETTINGS_LED_COLOR;
+    lv_screen_load(g_led_color_screen);
+}
+
 static void route_to_child(uint8_t idx) {
     if (idx >= 4) return;
 
@@ -360,19 +379,18 @@ void settings_menu_init(lv_obj_t *home_screen) {
     ui_time_date_init();
     ui_alarm_init();
     ui_other_init();
+    ui_led_color_menu_init();
+    g_led_color_screen = ui_led_color_menu_get_screen();
     g_children[1].screen = ui_alarm_get_screen();
     g_children[0].screen = ui_time_date_get_screen();
     g_children[2].screen = ui_other_get_screen();
     for (uint8_t i = 1; i < 4; ++i) {
         if (g_children[i].state == UiNavState::SETTINGS_DISPLAY ||
-            g_children[i].state == UiNavState::SETTINGS_ALARM) {
+            g_children[i].state == UiNavState::SETTINGS_ALARM ||
+            g_children[i].state == UiNavState::SETTINGS_OTHER) {
             continue;
         }
-        if (g_children[i].state == UiNavState::SETTINGS_OTHER) {
-            g_children[i].screen = build_child_screen(g_children[i].title, &g_other_cancel_bg, &g_other_accept_bg);
-        } else {
-            g_children[i].screen = build_child_screen(g_children[i].title, nullptr, nullptr);
-        }
+        g_children[i].screen = build_child_screen(g_children[i].title, nullptr, nullptr);
     }
 }
 
@@ -488,6 +506,22 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 route_to_main_settings();
             } else if (action == UiOtherAction::ACCEPT) {
                 route_to_main_settings();
+            } else if (action == UiOtherAction::ENTER_LED1) {
+                route_to_led_color(LED_STRIP_FRONT);
+            } else if (action == UiOtherAction::ENTER_LED2) {
+                route_to_led_color(LED_STRIP_BACK);
+            }
+            return;
+        }
+
+        case UiNavState::SETTINGS_LED_COLOR: {
+            const UiLedColorAction action = ui_led_color_menu_handle_inputs(
+                enc1_delta,
+                enc2_delta,
+                enc1_pressed,
+                enc2_pressed);
+            if (action == UiLedColorAction::CANCEL || action == UiLedColorAction::ACCEPT) {
+                route_to_other();
             }
             return;
         }

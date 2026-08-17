@@ -66,17 +66,25 @@ static void save_display() {
 }
 
 static void load_leds() {
-    settings.led_front_brightness = prefs.getUChar("led_fr_br", settings.led_front_brightness);
-    settings.led_back_brightness  = prefs.getUChar("led_bk_br", settings.led_back_brightness);
-    settings.led_front_enabled    = prefs.getBool ("led_fr_en", settings.led_front_enabled);
-    settings.led_back_enabled     = prefs.getBool ("led_bk_en", settings.led_back_enabled);
+    settings.led_front_brightness = prefs.getUChar ("led_fr_br", settings.led_front_brightness);
+    settings.led_back_brightness  = prefs.getUChar ("led_bk_br", settings.led_back_brightness);
+    settings.led_front_enabled    = prefs.getBool  ("led_fr_en", settings.led_front_enabled);
+    settings.led_back_enabled     = prefs.getBool  ("led_bk_en", settings.led_back_enabled);
+    settings.led1_hue             = prefs.getUShort("led1_hue",  settings.led1_hue);
+    settings.led1_sat             = prefs.getUChar ("led1_sat",  settings.led1_sat);
+    settings.led2_hue             = prefs.getUShort("led2_hue",  settings.led2_hue);
+    settings.led2_sat             = prefs.getUChar ("led2_sat",  settings.led2_sat);
 }
 
 static void save_leds() {
-    prefs.putUChar("led_fr_br", settings.led_front_brightness);
-    prefs.putUChar("led_bk_br", settings.led_back_brightness);
-    prefs.putBool ("led_fr_en", settings.led_front_enabled);
-    prefs.putBool ("led_bk_en", settings.led_back_enabled);
+    prefs.putUChar ("led_fr_br", settings.led_front_brightness);
+    prefs.putUChar ("led_bk_br", settings.led_back_brightness);
+    prefs.putBool  ("led_fr_en", settings.led_front_enabled);
+    prefs.putBool  ("led_bk_en", settings.led_back_enabled);
+    prefs.putUShort("led1_hue",  settings.led1_hue);
+    prefs.putUChar ("led1_sat",  settings.led1_sat);
+    prefs.putUShort("led2_hue",  settings.led2_hue);
+    prefs.putUChar ("led2_sat",  settings.led2_sat);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -105,6 +113,10 @@ void storage_manager_init() {
     settings.led_back_brightness  = 128;
     settings.led_front_enabled    = false;
     settings.led_back_enabled     = false;
+    settings.led1_hue             = 0;
+    settings.led1_sat             = 100;
+    settings.led2_hue             = 0;
+    settings.led2_sat             = 100;
 
     prefs.begin(NS, false);              // read-write mode
 

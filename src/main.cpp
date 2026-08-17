@@ -191,7 +191,9 @@ void setup() {
     {
         AppSettings &s = storage_manager_get();
         led_manager_init(s.led_front_brightness, s.led_back_brightness,
-                         s.led_front_enabled,    s.led_back_enabled);
+                         s.led_front_enabled,    s.led_back_enabled,
+                         s.led1_hue,             s.led1_sat,
+                         s.led2_hue,             s.led2_sat);
     }
 
     // 7. Input

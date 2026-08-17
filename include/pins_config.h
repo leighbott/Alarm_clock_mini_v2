@@ -26,9 +26,10 @@
 #define PIN_I2S_LRCLK   42
 #define PIN_I2S_DOUT    21
 
-// ── LED Channels (LEDC PWM via MOSFET) ───────────────────────────────────────
-#define PIN_LED_FRONT   16
-#define PIN_LED_BACK    17
+// ── LED Channels (WS2812B addressable, NeoPixel DIN) ─────────────────────────
+#define PIN_LED_FRONT   16   // LED1 strip data-in
+#define PIN_LED_BACK    17   // LED2 strip data-in
+#define LED_STRIP_COUNT 6    // pixels per strip
 
 // ── Light Sensor (LDR — ADC) ─────────────────────────────────────────────────
 #define PIN_LDR         15

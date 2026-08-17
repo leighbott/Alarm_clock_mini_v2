@@ -20,6 +20,10 @@ static uint8_t g_base_led_front = 0;
 static uint8_t g_base_led_back = 0;
 static bool g_base_led_front_on = false;
 static bool g_base_led_back_on = false;
+static uint16_t g_base_led_front_hue = 0;
+static uint8_t g_base_led_front_sat = 100;
+static uint16_t g_base_led_back_hue = 0;
+static uint8_t g_base_led_back_sat = 100;
 
 static uint32_t g_ramp_start_ms = 0;
 static uint32_t g_active_start_ms = 0;
@@ -151,6 +155,9 @@ static bool compute_next_scheduled_alarm_epoch(const AppSettings &s, const DateT
 static void restore_pre_alarm_outputs() {
     audio_manager_set_volume(g_base_audio_volume);
 
+    led_manager_set_hue_sat_front(g_base_led_front_hue, g_base_led_front_sat);
+    led_manager_set_hue_sat_back(g_base_led_back_hue, g_base_led_back_sat);
+
     set_front_output(g_base_led_front_on, g_base_led_front);
     set_back_output(g_base_led_back_on, g_base_led_back);
 }
@@ -161,6 +168,10 @@ static void capture_pre_alarm_outputs() {
     g_base_led_back = led_manager_get_back();
     g_base_led_front_on = led_manager_is_front_on();
     g_base_led_back_on = led_manager_is_back_on();
+    g_base_led_front_hue = led_manager_get_hue_front();
+    g_base_led_front_sat = led_manager_get_sat_front();
+    g_base_led_back_hue = led_manager_get_hue_back();
+    g_base_led_back_sat = led_manager_get_sat_back();
 }
 
 static void apply_alarm_outputs(bool audio_active,
@@ -206,6 +217,9 @@ static void start_alarm_flow(uint32_t target_epoch, bool skip_ramp) {
     const AppSettings &s = storage_manager_get();
 
     capture_pre_alarm_outputs();
+
+    led_manager_set_hue_sat_front(s.led1_hue, s.led1_sat);
+    led_manager_set_hue_sat_back(s.led2_hue, s.led2_sat);
 
     g_alarm_target_epoch = target_epoch;
     g_ramp_start_ms = millis();

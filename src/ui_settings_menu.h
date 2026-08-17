@@ -9,6 +9,7 @@ enum class UiNavState {
     SETTINGS_ALARM,
     SETTINGS_DISPLAY,
     SETTINGS_OTHER,
+    SETTINGS_LED_COLOR,
 };
 
 // Build settings screens and bind to the provided Home screen.

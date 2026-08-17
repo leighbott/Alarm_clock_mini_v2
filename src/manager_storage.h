@@ -32,6 +32,10 @@ struct AppSettings {
     uint8_t  led_back_brightness;    // 0–255
     bool     led_front_enabled;
     bool     led_back_enabled;
+    uint16_t led1_hue;               // 0–360 degrees
+    uint8_t  led1_sat;               // 0–100 %
+    uint16_t led2_hue;               // 0–360 degrees
+    uint8_t  led2_sat;               // 0–100 %
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
