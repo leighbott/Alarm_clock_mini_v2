@@ -118,6 +118,7 @@ static void adjust_home_led(bool front_led, int32_t delta) {
     }
 }
 
+
 void setup() {
     Serial.begin(115200);
     delay(500);
