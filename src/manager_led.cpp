@@ -19,9 +19,13 @@ static uint8_t  back_sat         = 100;
 static uint8_t gamma_correct(uint8_t brightness) {
     if (brightness == 0) return 0;
 
+    // Exponential curve crushes low inputs near-invisible; floor keeps any
+    // nonzero brightness visibly lit while still ramping exponentially above it.
+    static constexpr int MIN_VISIBLE = 12;
+
     const float normalized = (float)brightness / 255.0f;
     int corrected = (int)lroundf(powf(normalized, 2.2f) * 255.0f);
-    if (corrected < 0) corrected = 0;
+    if (corrected < MIN_VISIBLE) corrected = MIN_VISIBLE;
     if (corrected > 255) corrected = 255;
     return (uint8_t)corrected;
 }
