@@ -18,7 +18,7 @@
 
 // NV3007 bring-up toggles for quick field testing
 #define NV3007_GAP_X        0
-#define NV3007_GAP_Y        14
+#define NV3007_GAP_Y        12
 #define NV3007_USE_INVERT   0
 #define NV3007_COLOR_SWAPPED 1
 
