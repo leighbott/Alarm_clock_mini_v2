@@ -29,17 +29,17 @@
 // ── LED Channels (WS2812B addressable, NeoPixel DIN) ─────────────────────────
 #define PIN_LED_FRONT   16   // LED1 strip data-in
 #define PIN_LED_BACK    17   // LED2 strip data-in
-#define LED_STRIP_COUNT 6    // pixels per strip
+#define LED_STRIP_COUNT 40    // pixels per strip
 
 // ── Light Sensor (LDR — ADC) ─────────────────────────────────────────────────
 #define PIN_LDR         15
 
 // ── Rotary Encoder 1 ─────────────────────────────────────────────────────────
-#define PIN_ENC1_A      1
-#define PIN_ENC1_B      2
-#define PIN_ENC1_BTN    43   // TX (IO43) — active LOW, internal pullup
+#define PIN_ENC1_A      40
+#define PIN_ENC1_B      39
+#define PIN_ENC1_BTN    44   // TX (IO43) — active LOW, internal pullup
 
 // ── Rotary Encoder 2 ─────────────────────────────────────────────────────────
-#define PIN_ENC2_A      40
-#define PIN_ENC2_B      39
-#define PIN_ENC2_BTN    44   // RX (IO44) — active LOW, internal pullup
+#define PIN_ENC2_A      2
+#define PIN_ENC2_B      1
+#define PIN_ENC2_BTN    43  // RX (IO44) — active LOW, internal pullup

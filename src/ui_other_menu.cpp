@@ -209,8 +209,8 @@ void ui_other_init() {
     const int x1 = TILE_GAP + TILE_W + TILE_GAP;
     const int y0 = TILE_GAP;
 
-    g_tiles[0] = create_led_tile(content, x0, y0, "LED 1", &g_swatches[0]);
-    g_tiles[1] = create_led_tile(content, x1, y0, "LED 2", &g_swatches[1]);
+    g_tiles[0] = create_led_tile(content, x0, y0, "Front LED", &g_swatches[0]);
+    g_tiles[1] = create_led_tile(content, x1, y0, "Rear LED", &g_swatches[1]);
 
     g_selected_tile = 0;
     update_tile_focus();

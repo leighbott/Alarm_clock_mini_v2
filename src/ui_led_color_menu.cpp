@@ -12,15 +12,17 @@ static constexpr int HEADER_H = 34;
 static constexpr int CONTENT_Y = 36;
 static constexpr int CONTENT_H = DISP_H - CONTENT_Y;
 
-static constexpr int HUE_SEGMENTS = 36;   // 10 degrees per segment
-static constexpr int HUE_BAR_W = 300;
-static constexpr int HUE_BAR_H = 22;
-static constexpr int HUE_BAR_X = (DISP_W - HUE_BAR_W) / 2;
-static constexpr int HUE_BAR_Y = 8;
-static constexpr int HUE_SEG_W = HUE_BAR_W / HUE_SEGMENTS;
+// Field shell layout mirrors the value-shell pattern used by ui_display_menu.cpp.
+static constexpr int FIELD_TITLE_H = 20;
+static constexpr int FIELD_W = 84;
+static constexpr int FIELD_H = 70;
+static constexpr int FIELD_Y = FIELD_TITLE_H + 4;
+static constexpr int COL_W = 150;
+static constexpr int COL_GAP = 20;
+static constexpr int COLS_START_X = (DISP_W - (2 * COL_W + COL_GAP)) / 2;
 
-static constexpr int SAT_ARC_SIZE = 64;
-static constexpr int SAT_ARC_Y = HUE_BAR_Y + HUE_BAR_H + 10;
+static constexpr int HUE_CIRCLE_SIZE = 58;
+static constexpr int SAT_ARC_SIZE = 58;
 
 enum class Field : uint8_t { HUE = 0, SAT = 1 };
 
@@ -33,11 +35,11 @@ static lv_timer_t *g_pending_action_timer = nullptr;
 static UiLedColorAction g_pending_action = UiLedColorAction::NONE;
 static UiLedColorAction g_deferred_action = UiLedColorAction::NONE;
 
-static lv_obj_t *g_hue_bar = nullptr;
-static lv_obj_t *g_hue_segments[HUE_SEGMENTS] = {nullptr};
-static lv_obj_t *g_hue_needle = nullptr;
+static lv_obj_t *g_hue_shell = nullptr;
+static lv_obj_t *g_hue_circle = nullptr;
+static lv_obj_t *g_sat_shell = nullptr;
 static lv_obj_t *g_sat_arc = nullptr;
-static lv_obj_t *g_hue_frame = nullptr;
+static lv_obj_t *g_sat_value_label = nullptr;
 
 static LedStrip g_strip = LED_STRIP_FRONT;
 static Field g_field = Field::HUE;
@@ -177,28 +179,69 @@ static void apply_header_base(lv_obj_t *screen) {
     g_title_label = lbl_title;
 }
 
-static void update_hue_needle() {
-    const int x = HUE_BAR_X + (int)(((uint32_t)g_hue * HUE_BAR_W) / 360U);
-    lv_obj_set_pos(g_hue_needle, x - 1, HUE_BAR_Y - 3);
+static void update_hue_circle() {
+    if (g_hue_circle) lv_obj_set_style_bg_color(g_hue_circle, lv_color_hsv_to_rgb(g_hue, g_sat, 100), 0);
 }
 
 static void update_sat_arc() {
     lv_arc_set_value(g_sat_arc, g_sat);
+    if (g_sat_value_label) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%u%%", (unsigned)g_sat);
+        lv_label_set_text(g_sat_value_label, buf);
+    }
 }
 
 static void update_field_focus() {
-    if (g_hue_frame) {
-        if (g_field == Field::HUE) lv_obj_add_state(g_hue_frame, LV_STATE_FOCUSED);
-        else lv_obj_clear_state(g_hue_frame, LV_STATE_FOCUSED);
+    if (g_hue_shell) {
+        if (g_field == Field::HUE) lv_obj_add_state(g_hue_shell, LV_STATE_FOCUSED);
+        else lv_obj_clear_state(g_hue_shell, LV_STATE_FOCUSED);
     }
-    if (g_sat_arc) {
-        if (g_field == Field::SAT) lv_obj_add_state(g_sat_arc, LV_STATE_FOCUSED);
-        else lv_obj_clear_state(g_sat_arc, LV_STATE_FOCUSED);
+    if (g_sat_shell) {
+        if (g_field == Field::SAT) lv_obj_add_state(g_sat_shell, LV_STATE_FOCUSED);
+        else lv_obj_clear_state(g_sat_shell, LV_STATE_FOCUSED);
     }
 }
 
 static void apply_live_preview() {
     strip_set_hue_sat(g_hue, g_sat);
+    update_hue_circle();
+}
+
+// Value-shell box: same style as the field boxes used across the other menus.
+static lv_obj_t *create_field_shell(lv_obj_t *parent, int x) {
+    lv_obj_t *widget = lv_obj_create(parent);
+    lv_obj_set_size(widget, FIELD_W, FIELD_H);
+    lv_obj_set_pos(widget, x, FIELD_Y);
+    lv_obj_set_style_bg_color(widget, lv_color_make(0x16, 0x16, 0x16), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(widget, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(widget, 12, LV_PART_MAIN);
+    lv_obj_set_style_border_width(widget, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(widget, lv_color_make(0x3A, 0x3A, 0x3A), LV_PART_MAIN);
+    lv_obj_set_style_outline_width(widget, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(widget, 0, LV_PART_MAIN);
+    lv_obj_set_scrollable(widget, false);
+
+    lv_obj_set_style_border_width(widget, 3, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_color(widget, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_width(widget, 1, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_color(widget, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_opa(widget, LV_OPA_70, LV_PART_MAIN | LV_STATE_FOCUSED);
+
+    return widget;
+}
+
+static lv_obj_t *create_field_title(lv_obj_t *parent, int col_x, const char *text) {
+    lv_obj_t *title = lv_label_create(parent);
+    lv_label_set_text(title, text);
+    lv_obj_set_size(title, COL_W, FIELD_TITLE_H);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(title, lv_color_make(0xD0, 0xD0, 0xD0), 0);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(title, col_x, 0);
+    lv_obj_set_clickable(title, false);
+    lv_obj_set_click_focusable(title, false);
+    return title;
 }
 
 } // namespace
@@ -223,67 +266,47 @@ void ui_led_color_menu_init() {
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_set_scrollable(content, false);
 
-    // Hue rainbow bar built from segments, framed by a focusable outline.
-    g_hue_frame = lv_obj_create(content);
-    lv_obj_set_size(g_hue_frame, HUE_BAR_W + 8, HUE_BAR_H + 8);
-    lv_obj_set_pos(g_hue_frame, HUE_BAR_X - 4, HUE_BAR_Y - 4);
-    lv_obj_set_style_bg_opa(g_hue_frame, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(g_hue_frame, 0, 0);
-    lv_obj_set_style_pad_all(g_hue_frame, 0, 0);
-    lv_obj_set_scrollable(g_hue_frame, false);
-    lv_obj_set_style_border_width(g_hue_frame, 2, LV_STATE_FOCUSED);
-    lv_obj_set_style_border_color(g_hue_frame, lv_color_white(), LV_STATE_FOCUSED);
+    const int hue_col_x = COLS_START_X;
+    const int sat_col_x = COLS_START_X + COL_W + COL_GAP;
 
-    g_hue_bar = lv_obj_create(content);
-    lv_obj_set_size(g_hue_bar, HUE_BAR_W, HUE_BAR_H);
-    lv_obj_set_pos(g_hue_bar, HUE_BAR_X, HUE_BAR_Y);
-    lv_obj_set_style_bg_opa(g_hue_bar, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(g_hue_bar, 0, 0);
-    lv_obj_set_style_pad_all(g_hue_bar, 0, 0);
-    lv_obj_set_scrollable(g_hue_bar, false);
+    create_field_title(content, hue_col_x, "Hue");
+    g_hue_shell = create_field_shell(content, hue_col_x + ((COL_W - FIELD_W) / 2));
 
-    for (int i = 0; i < HUE_SEGMENTS; ++i) {
-        lv_obj_t *seg = lv_obj_create(g_hue_bar);
-        lv_obj_set_size(seg, HUE_SEG_W + 1, HUE_BAR_H);
-        lv_obj_set_pos(seg, i * HUE_SEG_W, 0);
-        lv_obj_set_style_border_width(seg, 0, 0);
-        lv_obj_set_style_pad_all(seg, 0, 0);
-        lv_obj_set_style_radius(seg, 0, 0);
-        lv_obj_set_scrollable(seg, false);
-        const uint32_t hue_deg = (uint32_t)i * 360U / HUE_SEGMENTS;
-        lv_obj_set_style_bg_color(seg, lv_color_hsv_to_rgb(hue_deg, 100, 100), 0);
-        lv_obj_set_style_bg_opa(seg, LV_OPA_COVER, 0);
-        g_hue_segments[i] = seg;
-    }
+    g_hue_circle = lv_obj_create(g_hue_shell);
+    lv_obj_set_size(g_hue_circle, HUE_CIRCLE_SIZE, HUE_CIRCLE_SIZE);
+    lv_obj_set_style_radius(g_hue_circle, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(g_hue_circle, 1, 0);
+    lv_obj_set_style_border_color(g_hue_circle, lv_color_white(), 0);
+    lv_obj_set_style_pad_all(g_hue_circle, 0, 0);
+    lv_obj_set_scrollable(g_hue_circle, false);
+    lv_obj_set_clickable(g_hue_circle, false);
+    lv_obj_center(g_hue_circle);
 
-    g_hue_needle = lv_obj_create(g_hue_bar);
-    lv_obj_set_size(g_hue_needle, 3, HUE_BAR_H + 6);
-    lv_obj_set_style_bg_color(g_hue_needle, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(g_hue_needle, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_hue_needle, 1, 0);
-    lv_obj_set_style_border_color(g_hue_needle, lv_color_white(), 0);
-    lv_obj_set_style_pad_all(g_hue_needle, 0, 0);
-    lv_obj_set_scrollable(g_hue_needle, false);
-    lv_obj_set_pos(g_hue_needle, -3, -3);
+    create_field_title(content, sat_col_x, "Sat");
+    g_sat_shell = create_field_shell(content, sat_col_x + ((COL_W - FIELD_W) / 2));
 
-    // Saturation arc.
-    g_sat_arc = lv_arc_create(content);
+    g_sat_arc = lv_arc_create(g_sat_shell);
     lv_obj_set_size(g_sat_arc, SAT_ARC_SIZE, SAT_ARC_SIZE);
-    lv_obj_align(g_sat_arc, LV_ALIGN_TOP_MID, 0, SAT_ARC_Y);
+    lv_obj_center(g_sat_arc);
+    lv_arc_set_rotation(g_sat_arc, 270);
+    lv_arc_set_bg_angles(g_sat_arc, 0, 360);
     lv_arc_set_range(g_sat_arc, 0, 100);
-    lv_arc_set_bg_angles(g_sat_arc, 135, 45);
+    lv_arc_set_mode(g_sat_arc, LV_ARC_MODE_NORMAL);
+    lv_obj_set_style_arc_width(g_sat_arc, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(g_sat_arc, lv_color_make(0x34, 0x34, 0x34), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(g_sat_arc, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(g_sat_arc, lv_color_make(0x4D, 0xB1, 0xFF), LV_PART_INDICATOR);
     lv_obj_remove_style(g_sat_arc, nullptr, LV_PART_KNOB);
     lv_obj_set_clickable(g_sat_arc, false);
-    lv_obj_set_style_arc_color(g_sat_arc, lv_color_make(0x80, 0x80, 0x80), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(g_sat_arc, lv_color_make(0xE0, 0xE0, 0xE0), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(g_sat_arc, 3, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_arc_color(g_sat_arc, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_scrollable(g_sat_arc, false);
 
-    lv_obj_t *sat_label = lv_label_create(g_sat_arc);
-    lv_label_set_text(sat_label, "Sat");
-    lv_obj_set_style_text_font(sat_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(sat_label, lv_color_white(), 0);
-    lv_obj_center(sat_label);
+    g_sat_value_label = lv_label_create(g_sat_shell);
+    lv_label_set_text(g_sat_value_label, "-");
+    lv_obj_set_style_text_font(g_sat_value_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(g_sat_value_label, lv_color_white(), 0);
+    lv_obj_set_width(g_sat_value_label, FIELD_W - 8);
+    lv_obj_set_style_text_align(g_sat_value_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(g_sat_value_label);
 }
 
 lv_obj_t *ui_led_color_menu_get_screen() {
@@ -297,7 +320,7 @@ void ui_led_color_menu_on_enter(LedStrip strip) {
     g_field = Field::HUE;
 
     if (g_title_label) {
-        lv_label_set_text(g_title_label, strip == LED_STRIP_FRONT ? "LED 1 Color" : "LED 2 Color");
+        lv_label_set_text(g_title_label, strip == LED_STRIP_FRONT ? "Front LED Color" : "Rear LED Color");
     }
 
     g_prev_on = strip_is_on();
@@ -312,7 +335,7 @@ void ui_led_color_menu_on_enter(LedStrip strip) {
     strip_set_brightness(255);
     strip_set_on(true);
 
-    update_hue_needle();
+    update_hue_circle();
     update_sat_arc();
     update_field_focus();
 }
@@ -364,7 +387,7 @@ UiLedColorAction ui_led_color_menu_handle_inputs(int32_t enc1_delta,
             next %= 360;
             if (next < 0) next += 360;
             g_hue = (uint16_t)next;
-            update_hue_needle();
+            update_hue_circle();
         } else {
             int32_t next = (int32_t)g_sat + enc2_delta * 2;
             if (next < 0) next = 0;

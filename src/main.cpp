@@ -167,7 +167,7 @@ void setup() {
     lv_display_t *lv_disp = lv_nv3007_create(142, 428, LV_LCD_FLAG_NONE,
                                                nv3007_send_cmd, nv3007_send_color);
     lv_nv3007_set_gap(lv_disp, NV3007_GAP_X, NV3007_GAP_Y);
-    lv_display_set_rotation(lv_disp, LV_DISPLAY_ROTATION_270);
+    lv_display_set_rotation(lv_disp, LV_DISPLAY_ROTATION_90);
 #if NV3007_COLOR_SWAPPED
     lv_display_set_color_format(lv_disp, LV_COLOR_FORMAT_RGB565_SWAPPED);
 #else
