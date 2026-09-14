@@ -52,7 +52,8 @@ static void update_time_date(const DateTime &now) {
     if (h12 == 0) h12 = 12;
 
     char buf[64];
-    std::snprintf(buf, sizeof(buf), g_colon_visible ? "%u:%02u" : "%u %02u", h12, (unsigned)now.minute());
+    // Recolor the colon instead of swapping to a space so minute digits never shift.
+    std::snprintf(buf, sizeof(buf), g_colon_visible ? "%u#FFFFFF :#%02u" : "%u#000000 :#%02u", h12, (unsigned)now.minute());
     lv_label_set_text(g_lbl_time, buf);
     lv_label_set_text(g_lbl_ampm, (now.hour() >= 12) ? "PM" : "AM");
 
@@ -90,6 +91,7 @@ void ui_alarm_active_window_init() {
     lv_obj_set_scrollable(left, false);
 
     g_lbl_time = lv_label_create(left);
+    lv_label_set_recolor(g_lbl_time, true);
     lv_label_set_text(g_lbl_time, "12:00");
     lv_obj_set_style_text_font(g_lbl_time, &lv_font_montserrat_32, 0);
     lv_obj_set_style_text_color(g_lbl_time, lv_color_white(), 0);
