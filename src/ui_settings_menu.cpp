@@ -3,6 +3,7 @@
 #include "ui_display_menu.h"
 #include "ui_other_menu.h"
 #include "ui_led_color_menu.h"
+#include "ui_quick_alarm_menu.h"
 #include "ui_time_date.h"
 #include "manager_led.h"
 
@@ -45,6 +46,7 @@ static bool g_other_screen_ready = false;
 static lv_obj_t *g_tiles[4] = {nullptr, nullptr, nullptr, nullptr};
 static uint8_t g_selected_tile = 0;
 static lv_obj_t *g_led_color_screen = nullptr;
+static lv_obj_t *g_quick_alarm_screen = nullptr;
 
 static ChildScreen g_children[4] = {
     {nullptr, UiNavState::SETTINGS_TIME_DATE, "Time & Date"},
@@ -57,6 +59,7 @@ static void route_to_home();
 static void route_to_main_settings();
 static void route_to_other();
 static void route_to_led_color(LedStrip strip);
+static void route_to_quick_alarm();
 
 static void hide_header_flash() {
     if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
@@ -334,6 +337,13 @@ static void route_to_led_color(LedStrip strip) {
     lv_screen_load(g_led_color_screen);
 }
 
+static void route_to_quick_alarm() {
+    if (!g_quick_alarm_screen) return;
+    ui_quick_alarm_on_enter();
+    g_state = UiNavState::QUICK_ALARM;
+    lv_screen_load(g_quick_alarm_screen);
+}
+
 static void route_to_child(uint8_t idx) {
     if (idx >= 4) return;
 
@@ -381,6 +391,8 @@ void settings_menu_init(lv_obj_t *home_screen) {
     ui_other_init();
     ui_led_color_menu_init();
     g_led_color_screen = ui_led_color_menu_get_screen();
+    ui_quick_alarm_init();
+    g_quick_alarm_screen = ui_quick_alarm_get_screen();
     g_children[1].screen = ui_alarm_get_screen();
     g_children[0].screen = ui_time_date_get_screen();
     g_children[2].screen = ui_other_get_screen();
@@ -408,6 +420,10 @@ void settings_menu_open_main() {
 
 void settings_menu_return_home() {
     route_to_home();
+}
+
+void settings_menu_open_quick_alarm() {
+    route_to_quick_alarm();
 }
 
 void settings_menu_handle_inputs(int32_t enc1_delta,
@@ -522,6 +538,18 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 enc2_pressed);
             if (action == UiLedColorAction::CANCEL || action == UiLedColorAction::ACCEPT) {
                 route_to_other();
+            }
+            return;
+        }
+
+        case UiNavState::QUICK_ALARM: {
+            const UiQuickAlarmAction action = ui_quick_alarm_handle_inputs(
+                enc1_delta,
+                enc2_delta,
+                enc1_pressed,
+                enc2_pressed);
+            if (action == UiQuickAlarmAction::CANCEL || action == UiQuickAlarmAction::ACCEPT) {
+                route_to_home();
             }
             return;
         }

@@ -10,6 +10,7 @@ enum class UiNavState {
     SETTINGS_DISPLAY,
     SETTINGS_OTHER,
     SETTINGS_LED_COLOR,
+    QUICK_ALARM,
 };
 
 // Build settings screens and bind to the provided Home screen.
@@ -24,6 +25,7 @@ bool settings_menu_is_home();
 // Router transitions.
 void settings_menu_open_main();
 void settings_menu_return_home();
+void settings_menu_open_quick_alarm();
 
 // Process input events for non-Home states.
 void settings_menu_handle_inputs(int32_t enc1_delta,

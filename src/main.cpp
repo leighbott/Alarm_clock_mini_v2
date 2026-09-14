@@ -262,15 +262,18 @@ void loop() {
             adjust_home_led(false, enc2_delta);
         }
 
-        const bool hold_ready =
-            (enc1_held && input_manager_button_hold_ms(ENC1) >= 500) ||
-            (enc2_held && input_manager_button_hold_ms(ENC2) >= 500);
+        const bool enc1_hold_ready = enc1_held && input_manager_button_hold_ms(ENC1) >= 500;
+        const bool enc2_hold_ready = enc2_held && input_manager_button_hold_ms(ENC2) >= 500;
 
-        if (hold_open_armed && !hold_open_latched && hold_ready) {
-            // Re-check alarm state at the action point to avoid opening settings
+        if (hold_open_armed && !hold_open_latched && (enc1_hold_ready || enc2_hold_ready)) {
+            // Re-check alarm state at the action point to avoid opening menus
             // during alarm state transitions where screen visibility can lag.
             if (!alarm_manager_is_alarm_active() && !alarm_manager_is_alarm_screen_visible()) {
-                settings_menu_open_main();
+                if (enc1_hold_ready) {
+                    settings_menu_open_main();
+                } else {
+                    settings_menu_open_quick_alarm();
+                }
             }
             hold_open_latched = true;
 
