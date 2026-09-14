@@ -81,25 +81,21 @@ static void adjust_home_led(bool front_led, int32_t delta) {
         return;
     }
 
-    AppSettings &settings = storage_manager_get();
-    uint8_t *stored_brightness = front_led ? &settings.led_front_brightness
-                                           : &settings.led_back_brightness;
-    bool *stored_enabled = front_led ? &settings.led_front_enabled
-                                     : &settings.led_back_enabled;
+    // Home-screen adjustments are transient (RAM/live LED state only) — never
+    // persisted to NVS, and never seeded from it. Base level comes from the
+    // live LED manager state (which always boots at 0/off).
+    const uint8_t current_brightness = front_led ? led_manager_get_front() : led_manager_get_back();
     const bool was_enabled = front_led ? led_manager_is_front_on() : led_manager_is_back_on();
 
     static constexpr int32_t LEVEL_COUNT = 12;
     static constexpr int32_t LEVEL_MAX = LEVEL_COUNT - 1;
 
-    const int32_t current_level = (int32_t)(((uint32_t)(*stored_brightness) * LEVEL_MAX + 127U) / 255U);
+    const int32_t current_level = (int32_t)(((uint32_t)current_brightness * LEVEL_MAX + 127U) / 255U);
     int32_t next_level = current_level + delta;
     if (next_level < 0) next_level = 0;
     if (next_level > LEVEL_MAX) next_level = LEVEL_MAX;
 
     const int32_t next = (int32_t)((next_level * 255 + (LEVEL_MAX / 2)) / LEVEL_MAX);
-
-    *stored_brightness = (uint8_t)next;
-    *stored_enabled = next > 0;
 
     if (front_led) {
         led_manager_set_front((uint8_t)next);
@@ -186,13 +182,13 @@ void setup() {
     rtc_manager_init();
     sensor_manager_init();
 
-    // 6. LEDs — restore saved state
+    // 6. LEDs — always boot off; only hue/sat colours are restored from NVS
     {
         AppSettings &s = storage_manager_get();
-        led_manager_init(s.led_front_brightness, s.led_back_brightness,
-                         s.led_front_enabled,    s.led_back_enabled,
-                         s.led1_hue,             s.led1_sat,
-                         s.led2_hue,             s.led2_sat);
+        led_manager_init(0, 0,
+                         false, false,
+                         s.led1_hue, s.led1_sat,
+                         s.led2_hue, s.led2_sat);
     }
 
     // 7. Input
