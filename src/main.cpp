@@ -116,8 +116,6 @@ static void adjust_home_led(bool front_led, int32_t delta) {
             led_manager_toggle_back();
         }
     }
-
-    storage_manager_save_leds();
 }
 
 void setup() {
