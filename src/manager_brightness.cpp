@@ -13,13 +13,19 @@ void display_set_brightness(uint8_t brightness);
 namespace {
 
 static constexpr uint32_t BOOST_DURATION_MS = 2000;
-static constexpr float LDR_EMA_ALPHA = 0.25f;
+static constexpr uint32_t LDR_AVERAGE_WINDOW_MS = 2000;
 
 static uint16_t g_last_ldr_raw = 0;
 static float g_smoothed_ldr = 0.0f;
 static uint32_t g_last_home_input_ms = 0;
 static uint8_t g_current_brightness = 0;
 static bool g_has_sample = false;
+static bool g_preview_override_active = false;
+static uint8_t g_preview_override_value = 0;
+
+static uint32_t g_ldr_accum_sum = 0;
+static uint32_t g_ldr_accum_count = 0;
+static uint32_t g_ldr_window_start_ms = 0;
 
 static uint8_t minimum_raw_brightness() {
     const AppSettings &settings = storage_manager_get();
@@ -64,6 +70,10 @@ static uint8_t select_target_brightness() {
         return 255;
     }
 
+    if (g_preview_override_active) {
+        return g_preview_override_value;
+    }
+
     if (!settings_menu_is_home()) {
         return clamp_with_minimum(settings.boost_brightness);
     }
@@ -88,6 +98,7 @@ void brightness_manager_init() {
     g_last_ldr_raw = (uint16_t)analogRead(PIN_LDR);
     g_smoothed_ldr = (float)g_last_ldr_raw;
     g_has_sample = true;
+    g_ldr_window_start_ms = millis();
 
     g_current_brightness = select_target_brightness();
     display_set_brightness(g_current_brightness);
@@ -100,8 +111,20 @@ void brightness_manager_update() {
     if (!g_has_sample) {
         g_smoothed_ldr = (float)sample;
         g_has_sample = true;
-    } else {
-        g_smoothed_ldr += ((float)sample - g_smoothed_ldr) * LDR_EMA_ALPHA;
+        g_ldr_window_start_ms = millis();
+    }
+
+    // Accumulate raw samples; only fold into the value used for auto-brightness
+    // once per averaging window so the display doesn't flicker in real time.
+    g_ldr_accum_sum += sample;
+    g_ldr_accum_count++;
+
+    const uint32_t now = millis();
+    if ((uint32_t)(now - g_ldr_window_start_ms) >= LDR_AVERAGE_WINDOW_MS) {
+        g_smoothed_ldr = (float)g_ldr_accum_sum / (float)g_ldr_accum_count;
+        g_ldr_accum_sum = 0;
+        g_ldr_accum_count = 0;
+        g_ldr_window_start_ms = now;
     }
 
     g_current_brightness = select_target_brightness();
@@ -110,6 +133,15 @@ void brightness_manager_update() {
 
 void brightness_manager_note_home_input() {
     g_last_home_input_ms = millis();
+}
+
+void brightness_manager_set_preview_override(uint8_t raw_brightness) {
+    g_preview_override_active = true;
+    g_preview_override_value = raw_brightness;
+}
+
+void brightness_manager_clear_preview_override() {
+    g_preview_override_active = false;
 }
 
 uint16_t brightness_manager_get_last_ldr_raw() {

@@ -9,6 +9,7 @@
 #include "ui_settings_menu.h"
 
 #include <Arduino.h>
+#include <math.h>
 #include <string.h>
 
 namespace {
@@ -61,6 +62,16 @@ static uint8_t ramp_from_one_to_end(uint8_t end_value, uint32_t elapsed_ms, uint
     if (end_value <= 1U) return end_value;
 
     return (uint8_t)(1U + ((uint32_t)(end_value - 1U) * elapsed_ms) / total_ms);
+}
+
+static uint8_t led_ramp_from_one_to_end(uint8_t end_value, uint32_t elapsed_ms, uint32_t total_ms) {
+    if (total_ms == 0U) return end_value;
+    if (elapsed_ms >= total_ms) return end_value;
+    if (end_value <= 1U) return end_value;
+
+    const float normalized = (float)elapsed_ms / (float)total_ms;
+    const float curved = powf(normalized, 2.2f);
+    return (uint8_t)lroundf(1.0f + ((float)(end_value - 1U) * curved));
 }
 
 static bool repeat_allows_today(uint8_t repeat_mask, uint8_t rtc_dow) {
@@ -287,7 +298,7 @@ static bool compute_current_flow_levels(uint32_t now_ms,
         *out_volume = ramp_from_one_to_end(g_flow_end_volume, flow_elapsed_ms - vol_start_offset_ms, vol_ramp_ms);
     }
     if (*out_led_active && sun_ramp_ms > 0U) {
-        *out_led_value = ramp_from_one_to_end(g_flow_end_led, flow_elapsed_ms - sun_start_offset_ms, sun_ramp_ms);
+        *out_led_value = led_ramp_from_one_to_end(g_flow_end_led, flow_elapsed_ms - sun_start_offset_ms, sun_ramp_ms);
     }
 
     const bool audio_complete = *out_audio_active && ((vol_ramp_ms == 0U) || ((flow_elapsed_ms - vol_start_offset_ms) >= vol_ramp_ms));

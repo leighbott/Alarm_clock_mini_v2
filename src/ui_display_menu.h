@@ -10,9 +10,9 @@ enum class UiDisplayAction {
 };
 
 enum class UiDisplayField : uint8_t {
-    MIN_BRIGHTNESS = 0,
+    AUTO_BRIGHTNESS = 0,
+    MIN_BRIGHTNESS,
     MANUAL_BRIGHTNESS,
-    AUTO_BRIGHTNESS,
     DISPLAY_BOOST,
     LDR_MAX_RAW,
 };

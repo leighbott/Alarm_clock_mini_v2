@@ -30,7 +30,7 @@ static uint8_t gamma_correct(uint8_t brightness) {
     // indents all rounding to the same floor value) before it ever exceeded
     // it. Instead, rescale the curve's output range to [MIN_VISIBLE, 255] so
     // every nonzero input maps to a distinct, monotonically increasing value.
-    static constexpr float MIN_VISIBLE = 25.0f;
+    static constexpr float MIN_VISIBLE = 0.0f;
 
     const float normalized = (float)brightness / 255.0f;
     float corrected = MIN_VISIBLE + powf(normalized, 2.2f) * (255.0f - MIN_VISIBLE);

@@ -1,6 +1,6 @@
 #include "ui_display_menu.h"
 
-#include "manager_led.h"
+#include "manager_brightness.h"
 #include "manager_storage.h"
 
 #include <cstdio>
@@ -44,14 +44,10 @@ static lv_obj_t *g_level_dots[LEVEL_COUNT] = {nullptr};
 
 static lv_timer_t *g_realtime_preview_timer = nullptr;
 static bool g_preview_active = false;
-static uint8_t g_preview_front_brightness = 0;
-static uint8_t g_preview_back_brightness = 0;
-static bool g_preview_front_on = false;
-static bool g_preview_back_on = false;
 
 static uint8_t g_window_start = 0;
 
-static UiDisplayState g_state = {false, 50, true, 78, 2500, UiDisplayField::MIN_BRIGHTNESS};
+static UiDisplayState g_state = {false, 50, true, 78, 2500, UiDisplayField::AUTO_BRIGHTNESS};
 
 static void hide_header_flash() {
     if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
@@ -95,9 +91,8 @@ static uint8_t selected_index() {
     return (uint8_t)g_state.selected_field;
 }
 
-static uint8_t minimum_percent() {
-    return g_state.min_brightness_off ? 0 : 1;
-}
+static constexpr uint8_t MANUAL_MIN_PERCENT = 1;
+static constexpr uint8_t BOOST_MIN_PERCENT = 5;
 
 static uint8_t raw_to_percent(uint8_t raw_value) {
     if (raw_value == 0) return 0;
@@ -120,9 +115,12 @@ static uint8_t percent_to_raw(uint8_t percent_value) {
 }
 
 static void clamp_state() {
-    const uint8_t minimum = minimum_percent();
-    if (g_state.manual_brightness_percent < minimum) g_state.manual_brightness_percent = minimum;
-    if (g_state.boost_brightness_percent < minimum) g_state.boost_brightness_percent = minimum;
+    if (g_state.manual_brightness_percent < MANUAL_MIN_PERCENT) {
+        g_state.manual_brightness_percent = MANUAL_MIN_PERCENT;
+    }
+    if (g_state.boost_brightness_percent < BOOST_MIN_PERCENT) {
+        g_state.boost_brightness_percent = BOOST_MIN_PERCENT;
+    }
     if (g_state.manual_brightness_percent > 100) g_state.manual_brightness_percent = 100;
     if (g_state.boost_brightness_percent > 100) g_state.boost_brightness_percent = 100;
     if (g_state.ldr_max_raw > 4095) g_state.ldr_max_raw = 4095;
@@ -130,7 +128,7 @@ static void clamp_state() {
 
 static const char *field_title(uint8_t idx) {
     static const char *titles[FIELD_COUNT] = {
-        "Minimum\nBrightness", "Manual\nBrightness", "Auto\nBrightness", "Display\nBoost", "LDR\nMax Raw"
+        "Auto\nBrightness", "Min Auto\nBrightness", "Manual\nBrightness", "Display\nBoost", "LDR\nMax Raw"
     };
     return titles[idx];
 }
@@ -186,31 +184,9 @@ static void restart_realtime_preview_timer() {
     lv_timer_set_repeat_count(g_realtime_preview_timer, 1);
 }
 
-static void start_led_preview_if_needed() {
-    if (g_preview_active) return;
-
-    g_preview_front_brightness = led_manager_get_front();
-    g_preview_back_brightness = led_manager_get_back();
-    g_preview_front_on = led_manager_is_front_on();
-    g_preview_back_on = led_manager_is_back_on();
-
-    if (!g_preview_front_on) {
-        led_manager_toggle_front();
-    }
-    if (!g_preview_back_on) {
-        led_manager_toggle_back();
-    }
-
+static void apply_manual_display_preview() {
     g_preview_active = true;
-}
-
-static void apply_manual_led_preview() {
-    start_led_preview_if_needed();
-
-    const uint8_t raw = percent_to_raw(g_state.manual_brightness_percent);
-    led_manager_set_front(raw);
-    led_manager_set_back(raw);
-
+    brightness_manager_set_preview_override(percent_to_raw(g_state.manual_brightness_percent));
     restart_realtime_preview_timer();
 }
 
@@ -222,19 +198,7 @@ static void stop_realtime_preview() {
 
     if (!g_preview_active) return;
 
-    led_manager_set_front(g_preview_front_brightness);
-    led_manager_set_back(g_preview_back_brightness);
-
-    const bool front_now = led_manager_is_front_on();
-    const bool back_now = led_manager_is_back_on();
-
-    if (front_now != g_preview_front_on) {
-        led_manager_toggle_front();
-    }
-    if (back_now != g_preview_back_on) {
-        led_manager_toggle_back();
-    }
-
+    brightness_manager_clear_preview_override();
     g_preview_active = false;
 }
 
@@ -325,7 +289,6 @@ static void adjust_selected_field(int32_t delta) {
     if (delta == 0) return;
 
     const uint8_t magnitude = (uint8_t)((delta > 0) ? delta : -delta);
-    const uint8_t minimum = minimum_percent();
 
     switch (g_state.selected_field) {
         case UiDisplayField::MIN_BRIGHTNESS:
@@ -338,11 +301,13 @@ static void adjust_selected_field(int32_t delta) {
                 g_state.manual_brightness_percent = (next > 100) ? 100 : (uint8_t)next;
             } else {
                 int16_t next = (int16_t)g_state.manual_brightness_percent - (int16_t)(magnitude * 5U);
-                g_state.manual_brightness_percent = (next < minimum) ? minimum : (uint8_t)next;
+                g_state.manual_brightness_percent = (next < MANUAL_MIN_PERCENT) ? MANUAL_MIN_PERCENT : (uint8_t)next;
             }
             g_state.manual_brightness_percent = (uint8_t)((g_state.manual_brightness_percent / 5U) * 5U);
-            if (g_state.manual_brightness_percent < minimum) g_state.manual_brightness_percent = minimum;
-            apply_manual_led_preview();
+            if (g_state.manual_brightness_percent < MANUAL_MIN_PERCENT) {
+                g_state.manual_brightness_percent = MANUAL_MIN_PERCENT;
+            }
+            apply_manual_display_preview();
             break;
 
         case UiDisplayField::AUTO_BRIGHTNESS:
@@ -355,10 +320,12 @@ static void adjust_selected_field(int32_t delta) {
                 g_state.boost_brightness_percent = (next > 100) ? 100 : (uint8_t)next;
             } else {
                 int16_t next = (int16_t)g_state.boost_brightness_percent - (int16_t)(magnitude * 5U);
-                g_state.boost_brightness_percent = (next < minimum) ? minimum : (uint8_t)next;
+                g_state.boost_brightness_percent = (next < BOOST_MIN_PERCENT) ? BOOST_MIN_PERCENT : (uint8_t)next;
             }
             g_state.boost_brightness_percent = (uint8_t)((g_state.boost_brightness_percent / 5U) * 5U);
-            if (g_state.boost_brightness_percent < minimum) g_state.boost_brightness_percent = minimum;
+            if (g_state.boost_brightness_percent < BOOST_MIN_PERCENT) {
+                g_state.boost_brightness_percent = BOOST_MIN_PERCENT;
+            }
             break;
 
         case UiDisplayField::LDR_MAX_RAW: {
@@ -573,7 +540,7 @@ void ui_display_on_enter() {
     g_state.ldr_max_raw = (uint16_t)((settings.ldr_max_raw < 0.0f) ? 0.0f
                                                                : ((settings.ldr_max_raw > 4095.0f) ? 4095.0f
                                                                                                      : settings.ldr_max_raw));
-    g_state.selected_field = UiDisplayField::MIN_BRIGHTNESS;
+    g_state.selected_field = UiDisplayField::AUTO_BRIGHTNESS;
     stop_realtime_preview();
     update_widgets();
 }
