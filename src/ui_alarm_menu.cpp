@@ -117,6 +117,8 @@ static bool g_preview_led_front_on = false;
 static bool g_preview_led_back_on = false;
 static uint8_t g_preview_volume = 0;
 static bool g_preview_audio_active = false;
+static uint32_t g_last_end_vol_beep_ms = 0;
+static constexpr uint32_t END_VOL_BEEP_MIN_INTERVAL_MS = 200;
 
 static UiAlarmState g_state = {
     false, 7, 0, 80, 78, 5, 20, true, 9, 3, REPEAT_ONCE, "/test.mp3", AlarmField::ENABLED
@@ -368,11 +370,18 @@ static void preview_end_sun_level() {
 static void preview_end_volume_level() {
     if (!g_preview_audio_active) {
         g_preview_volume = audio_manager_get_volume();
-        audio_manager_play_beep();
         g_preview_audio_active = true;
+        g_last_end_vol_beep_ms = 0; // force an immediate beep on first change
     }
 
     audio_manager_set_volume(g_state.end_vol_pct);
+
+    const uint32_t now = lv_tick_get();
+    if ((now - g_last_end_vol_beep_ms) >= END_VOL_BEEP_MIN_INTERVAL_MS) {
+        audio_manager_play("/beeps/700hz.mp3");
+        g_last_end_vol_beep_ms = now;
+    }
+
     restart_realtime_preview_timer();
 }
 

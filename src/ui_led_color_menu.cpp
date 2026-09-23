@@ -187,7 +187,7 @@ static void update_sat_arc() {
     lv_arc_set_value(g_sat_arc, g_sat);
     if (g_sat_value_label) {
         char buf[8];
-        snprintf(buf, sizeof(buf), "%u%%", (unsigned)g_sat);
+        snprintf(buf, sizeof(buf), "%u", (unsigned)g_sat);
         lv_label_set_text(g_sat_value_label, buf);
     }
 }
@@ -282,7 +282,7 @@ void ui_led_color_menu_init() {
     lv_obj_set_clickable(g_hue_circle, false);
     lv_obj_center(g_hue_circle);
 
-    create_field_title(content, sat_col_x, "Sat");
+    create_field_title(content, sat_col_x, "Saturation");
     g_sat_shell = create_field_shell(content, sat_col_x + ((COL_W - FIELD_W) / 2));
 
     g_sat_arc = lv_arc_create(g_sat_shell);
