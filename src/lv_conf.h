@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 /* ── Colour ──────────────────────────────────────────────────────────────── */
-#define LV_COLOR_DEPTH 16
+#define LV_COLOR_FORMAT_DEFAULT LV_COLOR_FORMAT_RGB565
 
 /* ── Memory ──────────────────────────────────────────────────────────────── */
 #define LV_USE_STDLIB_MALLOC    LV_STDLIB_CLIB   /* use system malloc/free */

@@ -91,7 +91,7 @@ static uint8_t selected_index() {
     return (uint8_t)g_state.selected_field;
 }
 
-static constexpr uint8_t MANUAL_MIN_PERCENT = 1;
+static constexpr uint8_t MANUAL_MIN_PERCENT = 0;
 static constexpr uint8_t BOOST_MIN_PERCENT = 5;
 
 static uint8_t raw_to_percent(uint8_t raw_value) {
@@ -124,6 +124,11 @@ static void clamp_state() {
     if (g_state.manual_brightness_percent > 100) g_state.manual_brightness_percent = 100;
     if (g_state.boost_brightness_percent > 100) g_state.boost_brightness_percent = 100;
     if (g_state.ldr_max_raw > 4095) g_state.ldr_max_raw = 4095;
+
+    // Boost may never sit below manual brightness; it follows manual upward if needed.
+    if (g_state.boost_brightness_percent < g_state.manual_brightness_percent) {
+        g_state.boost_brightness_percent = g_state.manual_brightness_percent;
+    }
 }
 
 static const char *field_title(uint8_t idx) {
@@ -314,19 +319,23 @@ static void adjust_selected_field(int32_t delta) {
             g_state.auto_brightness = delta > 0;
             break;
 
-        case UiDisplayField::DISPLAY_BOOST:
+        case UiDisplayField::DISPLAY_BOOST: {
+            const uint8_t boost_floor = (BOOST_MIN_PERCENT > g_state.manual_brightness_percent)
+                                            ? BOOST_MIN_PERCENT
+                                            : g_state.manual_brightness_percent;
             if (delta > 0) {
                 uint16_t next = (uint16_t)g_state.boost_brightness_percent + (uint16_t)(magnitude * 5U);
                 g_state.boost_brightness_percent = (next > 100) ? 100 : (uint8_t)next;
             } else {
                 int16_t next = (int16_t)g_state.boost_brightness_percent - (int16_t)(magnitude * 5U);
-                g_state.boost_brightness_percent = (next < BOOST_MIN_PERCENT) ? BOOST_MIN_PERCENT : (uint8_t)next;
+                g_state.boost_brightness_percent = (next < boost_floor) ? boost_floor : (uint8_t)next;
             }
             g_state.boost_brightness_percent = (uint8_t)((g_state.boost_brightness_percent / 5U) * 5U);
-            if (g_state.boost_brightness_percent < BOOST_MIN_PERCENT) {
-                g_state.boost_brightness_percent = BOOST_MIN_PERCENT;
+            if (g_state.boost_brightness_percent < boost_floor) {
+                g_state.boost_brightness_percent = boost_floor;
             }
             break;
+        }
 
         case UiDisplayField::LDR_MAX_RAW: {
             const int16_t step = 25;

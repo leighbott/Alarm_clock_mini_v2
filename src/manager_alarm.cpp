@@ -67,11 +67,12 @@ static uint8_t ramp_from_one_to_end(uint8_t end_value, uint32_t elapsed_ms, uint
 static uint8_t led_ramp_from_one_to_end(uint8_t end_value, uint32_t elapsed_ms, uint32_t total_ms) {
     if (total_ms == 0U) return end_value;
     if (elapsed_ms >= total_ms) return end_value;
-    if (end_value <= 1U) return end_value;
+    static constexpr float MIN_VISIBLE = 20.0f;
+    if (end_value <= MIN_VISIBLE) return end_value;
 
     const float normalized = (float)elapsed_ms / (float)total_ms;
     const float curved = powf(normalized, 2.2f);
-    return (uint8_t)lroundf(1.0f + ((float)(end_value - 1U) * curved));
+    return (uint8_t)lroundf(MIN_VISIBLE + ((float)end_value - MIN_VISIBLE) * curved);
 }
 
 static bool repeat_allows_today(uint8_t repeat_mask, uint8_t rtc_dow) {
@@ -202,9 +203,14 @@ static void apply_alarm_outputs(bool audio_active,
     }
 }
 
-static void stop_alarm(bool return_home) {
+static void stop_alarm(bool return_home, bool leave_back_at_end) {
     audio_manager_stop();
-    restore_pre_alarm_outputs();
+    if (leave_back_at_end) {
+        set_front_output(false, 0);
+        set_back_output(true, g_flow_end_led);
+    } else {
+        restore_pre_alarm_outputs();
+    }
 
     const AppSettings &s = storage_manager_get();
     g_state = s.alarm_enabled ? AlarmState::ARMED : AlarmState::IDLE;
@@ -414,7 +420,7 @@ void alarm_manager_update(bool enc1_held, bool enc2_held) {
         apply_alarm_outputs(audio_active, vol_now, led_active, led_now, g_outputs_paused_for_hold);
 
         if (g_active_start_ms != 0 && (now_ms - g_active_start_ms) >= (5U * 60U * 1000U)) {
-            stop_alarm(true);
+            stop_alarm(true, false);
             return;
         }
     }
@@ -431,7 +437,7 @@ void alarm_manager_update(bool enc1_held, bool enc2_held) {
 
         if (!g_hold_dismiss_latched && held_ms >= hold_target_ms) {
             g_hold_dismiss_latched = true;
-            stop_alarm(true);
+            stop_alarm(true, true);
             return;
         }
     }

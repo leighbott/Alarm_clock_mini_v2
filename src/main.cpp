@@ -230,6 +230,12 @@ void loop() {
     }
 
     if (alarm_manager_is_alarm_active() || alarm_manager_is_alarm_screen_visible()) {
+        // Disarm home-screen hold-to-open so dismissing the alarm (which may
+        // involve holding an encoder) can't immediately trigger a menu open
+        // once the alarm window closes. Requires releasing both encoders
+        // before hold-to-open can be armed again.
+        hold_open_armed = false;
+        hold_open_latched = true;
         alarm_manager_update(enc1_held, enc2_held);
         brightness_manager_update();
         lv_task_handler();
