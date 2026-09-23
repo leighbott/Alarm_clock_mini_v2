@@ -8,8 +8,8 @@ RST,Board Reset,,,
 6,FREE,Reset,,
 7,FREE,Data/Command,,
 15,LDR,,,
-16,LED Strip 1 — PWM,MOSFET gate,,
-17,LED Strip 2 — PWM,MOSFET gate,,
+16,LED Strip 1 
+17,LED Strip 2 
 18,SD CARD MISO,,,
 8,FREE,Chip select,,
 3,FREE,Strapping pin,,

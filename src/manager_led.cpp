@@ -1,11 +1,18 @@
 #include "manager_led.h"
 #include "pins_config.h"
 #include <Arduino.h>
-#include <Adafruit_NeoPixel.h>
+#include <LiteLED.h>
 #include <math.h>
 
-static Adafruit_NeoPixel strip_front(LED_STRIP_COUNT, PIN_LED_FRONT, NEO_GRB + NEO_KHZ800);
-static Adafruit_NeoPixel strip_back(LED_STRIP_COUNT, PIN_LED_BACK, NEO_GRB + NEO_KHZ800);
+// Two independent LiteLED (RMT driver) instances, each pinned to its own
+// explicit RMT channel — avoids the shared/second-channel init bug seen with
+// Adafruit_NeoPixel where the second strip's RMT channel silently failed to
+// transmit (both strips defaulted to auto-assigned channels there).
+// NOTE: RMT_CHANNEL_0 was confirmed dead on this board (front output never
+// transmitted regardless of which GPIO/physical strip was wired to the
+// "front" role) — swapped to RMT_CHANNEL_2 to avoid it. Keep off channel 0.
+static LiteLED strip_front(LED_STRIP_WS2812, false, RMT_CHANNEL_2);
+static LiteLED strip_back(LED_STRIP_WS2812, false, RMT_CHANNEL_1);
 
 static uint8_t  front_brightness = 0;
 static uint8_t  back_brightness  = 0;
@@ -31,18 +38,40 @@ static uint8_t gamma_correct(uint8_t brightness) {
     return (uint8_t)lroundf(corrected);
 }
 
-static uint32_t hsv_color(Adafruit_NeoPixel &strip, uint16_t hue_deg, uint8_t sat_pct, uint8_t value) {
-    const uint16_t hue16 = (uint32_t)hue_deg * 65535UL / 360UL;
-    const uint8_t  sat8  = (uint16_t)sat_pct * 255U / 100U;
-    return strip.gamma32(strip.ColorHSV(hue16, sat8, gamma_correct(value)));
+// Converts hue (0-360 deg) / sat (0-100 %) / gamma-corrected value (0-255)
+// into a packed 0xRRGGBB colour, replacing Adafruit_NeoPixel::ColorHSV+gamma32.
+static crgb_t hsv_color(uint16_t hue_deg, uint8_t sat_pct, uint8_t value) {
+    const uint8_t v = gamma_correct(value);
+    if (sat_pct == 0) return ((uint32_t)v << 16) | ((uint32_t)v << 8) | v;
+
+    const float h = fmodf((float)(hue_deg % 360), 360.0f) / 60.0f;
+    const float s = sat_pct / 100.0f;
+    const float vf = v / 255.0f;
+    const int   i  = (int)h;
+    const float f  = h - i;
+    const float p  = vf * (1.0f - s);
+    const float q  = vf * (1.0f - s * f);
+    const float t  = vf * (1.0f - s * (1.0f - f));
+    float r, g, b;
+    switch (i % 6) {
+        case 0:  r = vf; g = t;  b = p;  break;
+        case 1:  r = q;  g = vf; b = p;  break;
+        case 2:  r = p;  g = vf; b = t;  break;
+        case 3:  r = p;  g = q;  b = vf; break;
+        case 4:  r = t;  g = p;  b = vf; break;
+        default: r = vf; g = p;  b = q;  break;
+    }
+    return ((uint32_t)lroundf(r * 255.0f) << 16) |
+           ((uint32_t)lroundf(g * 255.0f) << 8) |
+           (uint32_t)lroundf(b * 255.0f);
 }
 
-static void render(Adafruit_NeoPixel &strip, bool on, uint8_t brightness, uint16_t hue, uint8_t sat) {
-    const uint32_t color = on ? hsv_color(strip, hue, sat, brightness) : 0;
-    for (uint16_t i = 0; i < strip.numPixels(); ++i) {
-        strip.setPixelColor(i, color);
+static void render(LiteLED &strip, bool on, uint8_t brightness, uint16_t hue, uint8_t sat) {
+    if (on) {
+        strip.fill(hsv_color(hue, sat, brightness), true);
+    } else {
+        strip.clear(true);
     }
-    strip.show();
 }
 
 static void apply_front() {
@@ -66,14 +95,21 @@ void led_manager_init(uint8_t init_front_brightness, uint8_t init_back_brightnes
     back_hue         = init_back_hue;
     back_sat         = init_back_sat;
 
-    strip_front.begin();
-    strip_back.begin();
+    esp_err_t err_front = strip_front.begin(PIN_LED_FRONT, LED_STRIP_COUNT);
+    esp_err_t err_back  = strip_back.begin(PIN_LED_BACK, LED_STRIP_COUNT);
+    if (err_front != ESP_OK) {
+        Serial.printf("LED: front strip init failed: %s\n", esp_err_to_name(err_front));
+    }
+    if (err_back != ESP_OK) {
+        Serial.printf("LED: back strip init failed: %s\n", esp_err_to_name(err_back));
+    }
 
     apply_front();
     apply_back();
 
     Serial.println("LED: OK");
 }
+
 
 void led_manager_set_front(uint8_t brightness) {
     front_brightness = brightness;
