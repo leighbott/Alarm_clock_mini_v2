@@ -30,6 +30,14 @@ static lv_obj_t *main_screen  = nullptr;
 
 static bool colon_visible = true;
 
+// Weekday label (index 10) is anchored by its bottom-right corner instead of
+// top-left, since its text length varies ("Mon," vs "Wednesday,") and should
+// grow leftward from a stable right edge. g_dow_anchor_x/y hold that corner;
+// the label's actual top-left lv_obj position is recomputed from it whenever
+// its text, font size, or position changes.
+static int16_t g_dow_anchor_x = 0;
+static int16_t g_dow_anchor_y = 0;
+
 // ── Customizable element registry (Home Page menu) ───────────────────────────
 static lv_obj_t   *g_elements[UI_HOME_ELEMENT_COUNT_MAIN]   = {nullptr};
 static const char  *g_element_names[UI_HOME_ELEMENT_COUNT_MAIN] = {
@@ -124,6 +132,22 @@ static const char *month_name(uint8_t m) {
 
 static bool is_same_calendar_day(const DateTime &a, const DateTime &b) {
     return a.year() == b.year() && a.month() == b.month() && a.day() == b.day();
+}
+
+static void reposition_dow_anchor() {
+    if (!lbl_dow) return;
+    lv_obj_update_layout(lbl_dow);
+    int32_t w = lv_obj_get_width(lbl_dow);
+    int32_t h = lv_obj_get_height(lbl_dow);
+    lv_obj_set_align(lbl_dow, LV_ALIGN_DEFAULT);
+    lv_obj_set_pos(lbl_dow, (int16_t)(g_dow_anchor_x - w), (int16_t)(g_dow_anchor_y - h));
+}
+
+static void rgb565_to_hex(uint16_t v, char *out /* buffer of at least 7 bytes */) {
+    uint8_t r = (uint8_t)((v >> 8) & 0xF8); r |= (uint8_t)(r >> 5);
+    uint8_t g = (uint8_t)((v >> 3) & 0xFC); g |= (uint8_t)(g >> 6);
+    uint8_t b = (uint8_t)((v << 3) & 0xF8); b |= (uint8_t)(b >> 5);
+    snprintf(out, 7, "%02X%02X%02X", r, g, b);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -229,11 +253,18 @@ void ui_main_screen_init() {
         lv_obj_set_style_text_font(obj, font_for_size(g_factory_font_size[i]), 0);
         lv_obj_set_style_transform_scale(obj, transform_scale_for_size(g_factory_font_size[i]), 0);
         lv_obj_set_style_text_color(obj, COL_PRIMARY, 0);
-        lv_obj_set_pos(obj, g_factory_x[i], g_factory_y[i]);
+
+        if (i == 10) {
+            g_dow_anchor_x = g_factory_x[i];
+            g_dow_anchor_y = g_factory_y[i];
+            reposition_dow_anchor();
+        } else {
+            lv_obj_set_pos(obj, g_factory_x[i], g_factory_y[i]);
+        }
 
         g_element_default_font_size[i] = g_factory_font_size[i];
-        g_element_default_x[i] = g_factory_x[i];
-        g_element_default_y[i] = g_factory_y[i];
+        g_element_default_x[i] = (i == 10) ? g_dow_anchor_x : g_factory_x[i];
+        g_element_default_y[i] = (i == 10) ? g_dow_anchor_y : g_factory_y[i];
         g_element_default_color[i] = pack_rgb565(lv_obj_get_style_text_color(obj, LV_PART_MAIN));
         g_element_color[i] = g_element_default_color[i];
         g_element_visible[i] = true;
@@ -257,11 +288,9 @@ void ui_main_screen_update() {
         if (h12 == 0) h12 = 12;
         bool is_pm = now.hour() >= 12;
 
-        if (colon_visible) {
-            snprintf(buf, sizeof(buf), "%u#FFFFFF :#%02u", (unsigned)h12, (unsigned)now.minute());
-        } else {
-            snprintf(buf, sizeof(buf), "%u#000000 :#%02u", (unsigned)h12, (unsigned)now.minute());
-        }
+        char colon_hex[7];
+        rgb565_to_hex(colon_visible ? g_element_color[0] : g_background_color, colon_hex);
+        snprintf(buf, sizeof(buf), "%u#%s :#%02u", (unsigned)h12, colon_hex, (unsigned)now.minute());
         lv_label_set_text(lbl_time, buf);
         lv_label_set_text(lbl_ampm, is_pm ? "PM" : "AM");
 
@@ -271,6 +300,7 @@ void ui_main_screen_update() {
         // ── Date ──────────────────────────────────────────────────────────────
         snprintf(buf, sizeof(buf), "%s,", day_name(now.dayOfTheWeek()));
         lv_label_set_text(lbl_dow, buf);
+        reposition_dow_anchor();
 
         snprintf(buf, sizeof(buf), "%d%s %s",
                  now.day(), ordinal(now.day()),
@@ -359,6 +389,7 @@ void ui_main_screen_set_element_font_size(uint8_t index, uint8_t size) {
     g_element_font_size[index] = size;
     lv_obj_set_style_text_font(g_elements[index], font_for_size(size), 0);
     lv_obj_set_style_transform_scale(g_elements[index], transform_scale_for_size(size), 0);
+    if (index == 10) reposition_dow_anchor(); // font size change alters width, re-anchor to bottom-right
 }
 
 void ui_main_screen_get_element_pos(uint8_t index, int16_t *x, int16_t *y) {
@@ -367,12 +398,23 @@ void ui_main_screen_get_element_pos(uint8_t index, int16_t *x, int16_t *y) {
         if (y) *y = 0;
         return;
     }
+    if (index == 10) { // weekday: report the bottom-right anchor, not the top-left
+        if (x) *x = g_dow_anchor_x;
+        if (y) *y = g_dow_anchor_y;
+        return;
+    }
     if (x) *x = (int16_t)lv_obj_get_x(g_elements[index]);
     if (y) *y = (int16_t)lv_obj_get_y(g_elements[index]);
 }
 
 void ui_main_screen_set_element_pos(uint8_t index, int16_t x, int16_t y) {
     if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    if (index == 10) { // weekday: x,y define the bottom-right corner; text grows leftward from it
+        g_dow_anchor_x = x;
+        g_dow_anchor_y = y;
+        reposition_dow_anchor();
+        return;
+    }
     lv_obj_set_align(g_elements[index], LV_ALIGN_DEFAULT);
     lv_obj_set_pos(g_elements[index], x, y);
 }
