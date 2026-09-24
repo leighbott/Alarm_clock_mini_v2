@@ -55,6 +55,9 @@ void storage_manager_load_display() {
     settings.auto_brightness    = prefs.getBool ("auto_br",    settings.auto_brightness);
     settings.boost_brightness   = prefs.getUChar("boost_br",   settings.boost_brightness);
     settings.ldr_max_raw        = prefs.getFloat("ldr_max_raw", settings.ldr_max_raw);
+    settings.boost_duration_ms  = prefs.getUShort("boost_dur", settings.boost_duration_ms);
+    if (settings.boost_duration_ms < 500) settings.boost_duration_ms = 500;
+    if (settings.boost_duration_ms > 5000) settings.boost_duration_ms = 5000;
 }
 
 static void save_display() {
@@ -63,6 +66,7 @@ static void save_display() {
     prefs.putBool ("auto_br",    settings.auto_brightness);
     prefs.putUChar("boost_br",   settings.boost_brightness);
     prefs.putFloat("ldr_max_raw", settings.ldr_max_raw);
+    prefs.putUShort("boost_dur", settings.boost_duration_ms);
 }
 
 static void load_leds() {
@@ -96,7 +100,12 @@ static void load_home_page() {
         settings.home_elements[i].x = prefs.getShort(key, -1);
         snprintf(key, sizeof(key), "hm_e%u_y", (unsigned)i);
         settings.home_elements[i].y = prefs.getShort(key, -1);
+        snprintf(key, sizeof(key), "hm_e%u_vis", (unsigned)i);
+        settings.home_elements[i].visible = prefs.getUChar(key, 1);
+        snprintf(key, sizeof(key), "hm_e%u_col", (unsigned)i);
+        settings.home_elements[i].color_rgb565 = prefs.getUShort(key, 0xFFFF);
     }
+    settings.home_background_color_rgb565 = prefs.getUShort("hm_bg_col", 0x0000);
 }
 
 void storage_manager_save_home_element(uint8_t index) {
@@ -109,6 +118,14 @@ void storage_manager_save_home_element(uint8_t index) {
     prefs.putShort(key, e.x);
     snprintf(key, sizeof(key), "hm_e%u_y", (unsigned)index);
     prefs.putShort(key, e.y);
+    snprintf(key, sizeof(key), "hm_e%u_vis", (unsigned)index);
+    prefs.putUChar(key, e.visible);
+    snprintf(key, sizeof(key), "hm_e%u_col", (unsigned)index);
+    prefs.putUShort(key, e.color_rgb565);
+}
+
+void storage_manager_save_home_background() {
+    prefs.putUShort("hm_bg_col", settings.home_background_color_rgb565);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -133,6 +150,7 @@ void storage_manager_init() {
     settings.auto_brightness      = true;
     settings.boost_brightness     = 200;
     settings.ldr_max_raw          = 2500.0f;
+    settings.boost_duration_ms    = 2000;
     settings.led_front_brightness = 128;
     settings.led_back_brightness  = 128;
     settings.led_front_enabled    = false;
@@ -145,7 +163,10 @@ void storage_manager_init() {
         settings.home_elements[i].font_size = 0;
         settings.home_elements[i].x = -1;
         settings.home_elements[i].y = -1;
+        settings.home_elements[i].visible = 1;
+        settings.home_elements[i].color_rgb565 = 0xFFFF;
     }
+    settings.home_background_color_rgb565 = 0x0000;
 
     prefs.begin(NS, false);              // read-write mode
 

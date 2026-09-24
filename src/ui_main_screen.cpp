@@ -18,7 +18,8 @@
 static lv_obj_t *lbl_time     = nullptr;   // "12:34"
 static lv_obj_t *lbl_ampm     = nullptr;   // "AM" / "PM"
 static lv_obj_t *lbl_secs     = nullptr;   // "56"
-static lv_obj_t *lbl_date     = nullptr;   // "Monday, 14th Jul"
+static lv_obj_t *lbl_date     = nullptr;   // "14th Jul"
+static lv_obj_t *lbl_dow      = nullptr;   // "Monday,"
 static lv_obj_t *lbl_alarm    = nullptr;   // "Alarm  07:00" / "Alarm  OFF"
 static lv_obj_t *lbl_until    = nullptr;   // "in 14h 26m"
 static lv_obj_t *lbl_temp     = nullptr;   // "23.4°C"
@@ -32,21 +33,65 @@ static bool colon_visible = true;
 // ── Customizable element registry (Home Page menu) ───────────────────────────
 static lv_obj_t   *g_elements[UI_HOME_ELEMENT_COUNT_MAIN]   = {nullptr};
 static const char  *g_element_names[UI_HOME_ELEMENT_COUNT_MAIN] = {
-    "Time", "AM/PM", "Seconds", "Date", "Alarm",
+    "Time", "AM/PM", "Seconds", "Day/Month", "Alarm",
     "Time Until", "Temperature", "Humidity", "Brightness", "LDR Raw",
+    "Weekday",
 };
 static uint8_t g_element_font_size[UI_HOME_ELEMENT_COUNT_MAIN] = {0};
+static bool     g_element_visible[UI_HOME_ELEMENT_COUNT_MAIN] = {true};
+static uint16_t g_element_color[UI_HOME_ELEMENT_COUNT_MAIN] = {0};
+static bool     g_element_color_customized[UI_HOME_ELEMENT_COUNT_MAIN] = {false};
 
+static const uint8_t g_factory_font_size[UI_HOME_ELEMENT_COUNT_MAIN] = {
+    32, 20, 20, 20, 16, 16, 16, 16, 16, 16,
+    20,
+};
+static const int16_t g_factory_x[UI_HOME_ELEMENT_COUNT_MAIN] = {
+    0, 150, 105, 130, 0, 100, 190, 270, 0, 90,
+    0,
+};
+static const int16_t g_factory_y[UI_HOME_ELEMENT_COUNT_MAIN] = {
+    0, 8, 8, 38, 70, 70, 70, 70, 100, 100,
+    38,
+};
+
+// Factory defaults, captured once at init before any NVS customization is applied.
+static uint8_t  g_element_default_font_size[UI_HOME_ELEMENT_COUNT_MAIN] = {0};
+static int16_t  g_element_default_x[UI_HOME_ELEMENT_COUNT_MAIN] = {0};
+static int16_t  g_element_default_y[UI_HOME_ELEMENT_COUNT_MAIN] = {0};
+static uint16_t g_element_default_color[UI_HOME_ELEMENT_COUNT_MAIN] = {0};
+static uint16_t g_background_color = 0x0000;
+
+static bool g_alarm_color_customized = false;
+
+static uint16_t pack_rgb565(lv_color_t c) {
+    return (uint16_t)(((c.red & 0xF8) << 8) | ((c.green & 0xFC) << 3) | (c.blue >> 3));
+}
+
+static lv_color_t unpack_rgb565(uint16_t v) {
+    uint8_t r = (uint8_t)((v >> 8) & 0xF8); r |= (uint8_t)(r >> 5);
+    uint8_t g = (uint8_t)((v >> 3) & 0xFC); g |= (uint8_t)(g >> 6);
+    uint8_t b = (uint8_t)((v << 3) & 0xF8); b |= (uint8_t)(b >> 5);
+    return lv_color_make(r, g, b);
+}
+
+// Real fonts stop at 48pt; 64/80 fake a larger size by uniformly scaling the
+// 48pt font glyphs via the transform-scale style property (256 == 100%).
 static const lv_font_t *font_for_size(uint8_t size) {
     switch (size) {
-        case 14: return &lv_font_montserrat_14;
-        case 16: return &lv_font_montserrat_16;
-        case 20: return &lv_font_montserrat_20;
         case 24: return &lv_font_montserrat_24;
         case 32: return &lv_font_montserrat_32;
         case 48: return &lv_font_montserrat_48;
+        case 64: return &lv_font_montserrat_48;
+        case 80: return &lv_font_montserrat_48;
         default: return &lv_font_montserrat_16;
     }
+}
+
+static int32_t transform_scale_for_size(uint8_t size) {
+    if (size == 64) return (int32_t)(256 * 64 / 48);
+    if (size == 80) return (int32_t)(256 * 80 / 48);
+    return 256; // LV_SCALE_NONE
 }
 
 
@@ -87,6 +132,7 @@ void ui_main_screen_init() {
     main_screen = scr;
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF); // elements may be positioned off-screen; never show scrollbars
 
     // Left cluster: time/date/alarm
     lbl_time = lv_label_create(scr);
@@ -108,13 +154,19 @@ void ui_main_screen_init() {
     lv_obj_set_style_text_color(lbl_secs, COL_DIM, 0);
     lv_obj_align_to(lbl_secs, lbl_ampm, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
 
+    lbl_dow = lv_label_create(scr);
+    lv_label_set_text(lbl_dow, "---");
+    lv_obj_set_style_text_font(lbl_dow, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_dow, COL_DIM, 0);
+    lv_obj_set_style_text_align(lbl_dow, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align(lbl_dow, LV_ALIGN_TOP_LEFT, 10, 54);
+
     lbl_date = lv_label_create(scr);
     lv_label_set_text(lbl_date, "---");
     lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_date, COL_DIM, 0);
-    lv_obj_set_width(lbl_date, 280);
     lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_align(lbl_date, LV_ALIGN_TOP_LEFT, 10, 54);
+    lv_obj_align(lbl_date, LV_ALIGN_TOP_LEFT, 130, 54);
 
     lbl_alarm = lv_label_create(scr);
     lv_label_set_text(lbl_alarm, "Alarm  OFF");
@@ -158,25 +210,35 @@ void ui_main_screen_init() {
 
     // Register elements and snapshot their resolved layout as hardcoded x/y — all
     // future moves use lv_obj_set_pos() directly instead of relative alignment.
-    g_elements[0] = lbl_time;      g_element_font_size[0] = 48;
-    g_elements[1] = lbl_ampm;      g_element_font_size[1] = 16;
-    g_elements[2] = lbl_secs;      g_element_font_size[2] = 16;
-    g_elements[3] = lbl_date;      g_element_font_size[3] = 14;
-    g_elements[4] = lbl_alarm;     g_element_font_size[4] = 16;
-    g_elements[5] = lbl_until;     g_element_font_size[5] = 14;
-    g_elements[6] = lbl_temp;      g_element_font_size[6] = 20;
-    g_elements[7] = lbl_hum;       g_element_font_size[7] = 20;
-    g_elements[8] = lbl_brightness; g_element_font_size[8] = 14;
-    g_elements[9] = lbl_ldr_raw;   g_element_font_size[9] = 14;
+    g_elements[0] = lbl_time;
+    g_elements[1] = lbl_ampm;
+    g_elements[2] = lbl_secs;
+    g_elements[3] = lbl_date;
+    g_elements[4] = lbl_alarm;
+    g_elements[5] = lbl_until;
+    g_elements[6] = lbl_temp;
+    g_elements[7] = lbl_hum;
+    g_elements[8] = lbl_brightness;
+    g_elements[9] = lbl_ldr_raw;
+    g_elements[10] = lbl_dow;
 
     for (uint8_t i = 0; i < UI_HOME_ELEMENT_COUNT_MAIN; ++i) {
         lv_obj_t *obj = g_elements[i];
         if (!obj) continue;
-        int16_t x = (int16_t)lv_obj_get_x(obj);
-        int16_t y = (int16_t)lv_obj_get_y(obj);
-        lv_obj_set_pos(obj, x, y);
-    }
+        g_element_font_size[i] = g_factory_font_size[i];
+        lv_obj_set_style_text_font(obj, font_for_size(g_factory_font_size[i]), 0);
+        lv_obj_set_style_transform_scale(obj, transform_scale_for_size(g_factory_font_size[i]), 0);
+        lv_obj_set_style_text_color(obj, COL_PRIMARY, 0);
+        lv_obj_set_pos(obj, g_factory_x[i], g_factory_y[i]);
 
+        g_element_default_font_size[i] = g_factory_font_size[i];
+        g_element_default_x[i] = g_factory_x[i];
+        g_element_default_y[i] = g_factory_y[i];
+        g_element_default_color[i] = pack_rgb565(lv_obj_get_style_text_color(obj, LV_PART_MAIN));
+        g_element_color[i] = g_element_default_color[i];
+        g_element_visible[i] = true;
+    }
+    ui_main_screen_set_background_color(storage_manager_get().home_background_color_rgb565);
     ui_main_screen_apply_customization();
 }
 
@@ -207,8 +269,10 @@ void ui_main_screen_update() {
         lv_label_set_text(lbl_secs, buf);
 
         // ── Date ──────────────────────────────────────────────────────────────
-        snprintf(buf, sizeof(buf), "%s, %d%s %s",
-                 day_name(now.dayOfTheWeek()),
+        snprintf(buf, sizeof(buf), "%s,", day_name(now.dayOfTheWeek()));
+        lv_label_set_text(lbl_dow, buf);
+
+        snprintf(buf, sizeof(buf), "%d%s %s",
                  now.day(), ordinal(now.day()),
                  month_name(now.month()));
         lv_label_set_text(lbl_date, buf);
@@ -219,7 +283,7 @@ void ui_main_screen_update() {
         if (alarm_manager_get_next_alarm_time(now, &next_alarm, &is_snoozed)) {
             snprintf(buf, sizeof(buf), "Alarm  %02d:%02d", next_alarm.hour(), next_alarm.minute());
             lv_label_set_text(lbl_alarm, buf);
-            lv_obj_set_style_text_color(lbl_alarm, COL_ACCENT, 0);
+            if (!g_alarm_color_customized) lv_obj_set_style_text_color(lbl_alarm, COL_ACCENT, 0);
 
             if (!is_snoozed && !is_same_calendar_day(now, next_alarm)) {
                 snprintf(buf, sizeof(buf), "on %s", day_name(next_alarm.dayOfTheWeek()));
@@ -237,13 +301,14 @@ void ui_main_screen_update() {
             lv_label_set_text(lbl_until, buf);
         } else {
             lv_label_set_text(lbl_alarm, "Alarm  OFF");
-            lv_obj_set_style_text_color(lbl_alarm, COL_DIM, 0);
+            if (!g_alarm_color_customized) lv_obj_set_style_text_color(lbl_alarm, COL_DIM, 0);
             lv_label_set_text(lbl_until, "");
         }
     } else {
         lv_label_set_text(lbl_time, "RTC ERR");
         lv_label_set_text(lbl_secs, "--");
-        lv_label_set_text(lbl_date, "RTC ERROR");
+        lv_label_set_text(lbl_dow, "RTC");
+        lv_label_set_text(lbl_date, "ERROR");
     }
 
     // ── Sensors ───────────────────────────────────────────────────────────────
@@ -290,8 +355,10 @@ uint8_t ui_main_screen_get_element_font_size(uint8_t index) {
 
 void ui_main_screen_set_element_font_size(uint8_t index, uint8_t size) {
     if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    if (size < 16) size = 16;
     g_element_font_size[index] = size;
     lv_obj_set_style_text_font(g_elements[index], font_for_size(size), 0);
+    lv_obj_set_style_transform_scale(g_elements[index], transform_scale_for_size(size), 0);
 }
 
 void ui_main_screen_get_element_pos(uint8_t index, int16_t *x, int16_t *y) {
@@ -306,7 +373,75 @@ void ui_main_screen_get_element_pos(uint8_t index, int16_t *x, int16_t *y) {
 
 void ui_main_screen_set_element_pos(uint8_t index, int16_t x, int16_t y) {
     if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    lv_obj_set_align(g_elements[index], LV_ALIGN_DEFAULT);
     lv_obj_set_pos(g_elements[index], x, y);
+}
+
+bool ui_main_screen_get_element_visible(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) return true;
+    return g_element_visible[index];
+}
+
+void ui_main_screen_set_element_visible(uint8_t index, bool visible) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    g_element_visible[index] = visible;
+    lv_obj_set_hidden(g_elements[index], !visible);
+}
+
+uint16_t ui_main_screen_get_element_color(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) return 0xFFFF;
+    return g_element_color[index];
+}
+
+void ui_main_screen_set_element_color(uint8_t index, uint16_t color_rgb565) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    if (color_rgb565 == 0xFFFF) {
+        g_element_color_customized[index] = false;
+        g_element_color[index] = g_element_default_color[index];
+        lv_obj_set_style_text_color(g_elements[index], unpack_rgb565(g_element_default_color[index]), 0);
+    } else {
+        g_element_color_customized[index] = true;
+        g_element_color[index] = color_rgb565;
+        lv_obj_set_style_text_color(g_elements[index], unpack_rgb565(color_rgb565), 0);
+    }
+    if (index == 4) g_alarm_color_customized = true;
+}
+
+uint8_t ui_main_screen_get_element_default_font_size(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) return 0;
+    return g_element_default_font_size[index];
+}
+
+void ui_main_screen_get_element_default_pos(uint8_t index, int16_t *x, int16_t *y) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) {
+        if (x) *x = 0;
+        if (y) *y = 0;
+        return;
+    }
+    if (x) *x = g_element_default_x[index];
+    if (y) *y = g_element_default_y[index];
+}
+
+uint16_t ui_main_screen_get_element_default_color(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) return 0xFFFF;
+    return g_element_default_color[index];
+}
+
+void ui_main_screen_reset_element(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    ui_main_screen_set_element_font_size(index, g_element_default_font_size[index]);
+    ui_main_screen_set_element_pos(index, g_element_default_x[index], g_element_default_y[index]);
+    ui_main_screen_set_element_color(index, 0xFFFF);
+    ui_main_screen_set_element_visible(index, true);
+}
+
+uint16_t ui_main_screen_get_background_color() {
+    return g_background_color;
+}
+
+void ui_main_screen_set_background_color(uint16_t color_rgb565) {
+    g_background_color = color_rgb565;
+    if (main_screen) lv_obj_set_style_bg_color(main_screen, unpack_rgb565(color_rgb565), 0);
 }
 
 void ui_main_screen_apply_customization() {
@@ -314,9 +449,13 @@ void ui_main_screen_apply_customization() {
     for (uint8_t i = 0; i < UI_HOME_ELEMENT_COUNT_MAIN; ++i) {
         if (!g_elements[i]) continue;
         const UiElementConfig &e = s.home_elements[i];
-        if (e.font_size == 0 || e.x < 0 || e.y < 0) continue;
-        ui_main_screen_set_element_font_size(i, e.font_size);
-        ui_main_screen_set_element_pos(i, e.x, e.y);
+        if (e.font_size != 0 && e.x >= 0 && e.y >= 0) {
+            ui_main_screen_set_element_font_size(i, e.font_size);
+            ui_main_screen_set_element_pos(i, e.x, e.y);
+        }
+        ui_main_screen_set_element_visible(i, e.visible != 0);
+        ui_main_screen_set_element_color(i, e.color_rgb565);
     }
 }
+
 

@@ -12,7 +12,6 @@ void display_set_brightness(uint8_t brightness);
 
 namespace {
 
-static constexpr uint32_t BOOST_DURATION_MS = 2000;
 static constexpr uint32_t LDR_AVERAGE_WINDOW_MS = 2000;
 
 static uint16_t g_last_ldr_raw = 0;
@@ -60,7 +59,7 @@ static uint8_t map_ldr_to_brightness(float ldr_value) {
 
 static bool boost_is_active() {
     if (g_last_home_input_ms == 0) return false;
-    return (uint32_t)(millis() - g_last_home_input_ms) <= BOOST_DURATION_MS;
+    return (uint32_t)(millis() - g_last_home_input_ms) <= storage_manager_get().boost_duration_ms;
 }
 
 static uint8_t select_target_brightness() {

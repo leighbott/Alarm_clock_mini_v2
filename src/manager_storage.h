@@ -4,12 +4,14 @@
 #include <stdbool.h>
 
 // ── Home screen element customization ─────────────────────────────────────────
-static constexpr uint8_t UI_HOME_ELEMENT_COUNT = 10;
+static constexpr uint8_t UI_HOME_ELEMENT_COUNT = 11;
 
 struct UiElementConfig {
-    uint8_t font_size;   // pt size (14/16/20/24/32/48); 0 = not customized, use built-in default
-    int16_t x;
-    int16_t y;
+    uint8_t  font_size;    // pt size (16/24/32/48/64/80); 0 = not customized, use built-in default
+    int16_t  x;
+    int16_t  y;
+    uint8_t  visible;      // 0 = hidden, 1 = shown (always concrete, default 1)
+    uint16_t color_rgb565; // packed RGB565; 0xFFFF sentinel = use built-in default color
 };
 
 // ── All persistent settings ───────────────────────────────────────────────────
@@ -35,6 +37,7 @@ struct AppSettings {
     bool     auto_brightness;
     uint8_t  boost_brightness;       // 0–255
     float    ldr_max_raw;            // ADC scale ceiling for auto brightness mapping
+    uint16_t boost_duration_ms;      // display boost hold duration, 500–5000 ms
 
     // LEDs (last known state — restored on boot)
     uint8_t  led_front_brightness;   // 0–255
@@ -48,6 +51,7 @@ struct AppSettings {
 
     // Home page customization
     UiElementConfig home_elements[UI_HOME_ELEMENT_COUNT];
+    uint16_t        home_background_color_rgb565;
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -61,3 +65,4 @@ void              storage_manager_load_display();      // display fields only
 void              storage_manager_save_display();      // display fields only
 void              storage_manager_save_leds();         // LED fields only
 void              storage_manager_save_home_element(uint8_t index); // one home-page element
+void              storage_manager_save_home_background();

@@ -12,7 +12,7 @@ static constexpr int DISP_H = 142;
 static constexpr int HEADER_H = 34;
 static constexpr int CONTENT_Y = 36;
 static constexpr int CONTENT_H = DISP_H - CONTENT_Y;
-static constexpr uint8_t FIELD_COUNT = 5;
+static constexpr uint8_t FIELD_COUNT = 6;
 static constexpr uint8_t VISIBLE_COLS = 4;
 static constexpr uint8_t LEVEL_COUNT = (FIELD_COUNT + VISIBLE_COLS - 1) / VISIBLE_COLS;
 static constexpr int PAGE_DOT_W = 16;
@@ -47,7 +47,7 @@ static bool g_preview_active = false;
 
 static uint8_t g_window_start = 0;
 
-static UiDisplayState g_state = {false, 50, true, 78, 2500, UiDisplayField::AUTO_BRIGHTNESS};
+static UiDisplayState g_state = {false, 50, true, 78, 2500, 2000, UiDisplayField::AUTO_BRIGHTNESS};
 
 static void hide_header_flash() {
     if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
@@ -124,6 +124,8 @@ static void clamp_state() {
     if (g_state.manual_brightness_percent > 100) g_state.manual_brightness_percent = 100;
     if (g_state.boost_brightness_percent > 100) g_state.boost_brightness_percent = 100;
     if (g_state.ldr_max_raw > 4095) g_state.ldr_max_raw = 4095;
+    if (g_state.boost_duration_ms < 500) g_state.boost_duration_ms = 500;
+    if (g_state.boost_duration_ms > 5000) g_state.boost_duration_ms = 5000;
 
     // Boost may never sit below manual brightness; it follows manual upward if needed.
     if (g_state.boost_brightness_percent < g_state.manual_brightness_percent) {
@@ -133,7 +135,7 @@ static void clamp_state() {
 
 static const char *field_title(uint8_t idx) {
     static const char *titles[FIELD_COUNT] = {
-        "Auto\nBrightness", "Min Auto\nBrightness", "Manual\nBrightness", "Display\nBoost", "LDR\nMax Raw"
+        "Auto\nBrightness", "Min Auto\nBrightness", "Manual\nBrightness", "Display\nBoost", "LDR\nMax Raw", "Boost\nDuration"
     };
     return titles[idx];
 }
@@ -264,13 +266,17 @@ static void update_widgets() {
                 case UiDisplayField::LDR_MAX_RAW:
                     std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.ldr_max_raw);
                     break;
+                case UiDisplayField::BOOST_DURATION:
+                    std::snprintf(value, sizeof(value), "%ums", (unsigned)g_state.boost_duration_ms);
+                    break;
                 default:
                     value[0] = '\0';
                     break;
             }
             lv_obj_set_style_text_font(g_value_labels[slot],
-                                       field == UiDisplayField::LDR_MAX_RAW ? &lv_font_montserrat_16
-                                                                             : &lv_font_montserrat_20,
+                                       (field == UiDisplayField::LDR_MAX_RAW || field == UiDisplayField::BOOST_DURATION)
+                                           ? &lv_font_montserrat_16
+                                           : &lv_font_montserrat_20,
                                        0);
             lv_obj_set_style_text_color(g_value_labels[slot], lv_color_white(), 0);
             lv_label_set_text(g_value_labels[slot], value);
@@ -287,6 +293,7 @@ static void save_state_to_storage() {
     settings.auto_brightness = g_state.auto_brightness;
     settings.boost_brightness = percent_to_raw(g_state.boost_brightness_percent);
     settings.ldr_max_raw = (float)g_state.ldr_max_raw;
+    settings.boost_duration_ms = g_state.boost_duration_ms;
     storage_manager_save_display();
 }
 
@@ -344,6 +351,16 @@ static void adjust_selected_field(int32_t delta) {
             if (next < 0) next = 0;
             if (next > 4095) next = 4095;
             g_state.ldr_max_raw = (uint16_t)next;
+            break;
+        }
+
+        case UiDisplayField::BOOST_DURATION: {
+            const int16_t step = 1000;
+            int32_t next = (int32_t)g_state.boost_duration_ms + ((delta > 0) ? (int32_t)(step * magnitude)
+                                                                              : -(int32_t)(step * magnitude));
+            if (next < 500) next = 500;
+            if (next > 5000) next = 5000;
+            g_state.boost_duration_ms = (uint16_t)next;
             break;
         }
     }
@@ -549,6 +566,7 @@ void ui_display_on_enter() {
     g_state.ldr_max_raw = (uint16_t)((settings.ldr_max_raw < 0.0f) ? 0.0f
                                                                : ((settings.ldr_max_raw > 4095.0f) ? 4095.0f
                                                                                                      : settings.ldr_max_raw));
+    g_state.boost_duration_ms = settings.boost_duration_ms;
     g_state.selected_field = UiDisplayField::AUTO_BRIGHTNESS;
     stop_realtime_preview();
     update_widgets();
