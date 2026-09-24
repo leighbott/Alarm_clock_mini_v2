@@ -204,7 +204,29 @@ void setup() {
     Serial.println("Boot OK");
 }
 
+#if AUDIO_DEBUG_TIMING
+static uint32_t dbg_last_loop_start_ms = 0;
+static void debug_log_lv_task_handler() {
+    const uint32_t start_us = micros();
+    lv_task_handler();
+    const uint32_t duration_us = micros() - start_us;
+    if (duration_us > 8000) {
+        Serial.printf("[lv_task_handler] took %luus\n", (unsigned long)duration_us);
+    }
+}
+#endif
+
 void loop() {
+#if AUDIO_DEBUG_TIMING
+    {
+        const uint32_t now_ms = millis();
+        const uint32_t gap_ms = now_ms - dbg_last_loop_start_ms;
+        if (gap_ms > 15) {
+            Serial.printf("[loop] gap=%lums\n", (unsigned long)gap_ms);
+        }
+        dbg_last_loop_start_ms = now_ms;
+    }
+#endif
     input_manager_update();
     audio_manager_loop();
 
@@ -238,7 +260,11 @@ void loop() {
         hold_open_latched = true;
         alarm_manager_update(enc1_held, enc2_held);
         brightness_manager_update();
+#if AUDIO_DEBUG_TIMING
+        debug_log_lv_task_handler();
+#else
         lv_task_handler();
+#endif
         delay(5);
         return;
     }
@@ -300,7 +326,11 @@ void loop() {
         ui_main_screen_update();
     }
 
+#if AUDIO_DEBUG_TIMING
+    debug_log_lv_task_handler();
+#else
     lv_task_handler();
+#endif
     delay(5);
 }
 

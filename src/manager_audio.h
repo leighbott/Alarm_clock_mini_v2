@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// Toggle Serial diagnostics for audio stutter investigation (throttled/threshold-gated).
+#define AUDIO_DEBUG_TIMING 1
+
 struct AudioBrowserEntry {
 	char name[32];
 	char path[64];

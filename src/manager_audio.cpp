@@ -16,8 +16,22 @@ static char       loop_path[64] = {0};
 static bool       preview_active = false;
 static char       preview_path[64] = {0};
 
+#if AUDIO_DEBUG_TIMING
+static uint32_t   dbg_last_connect_ms = 0;
+static void debug_log_connect(const char *site, const char *path) {
+    const uint32_t now = millis();
+    Serial.printf("[audio_connect] site=%s path=%s t=%lu since_prev=%lums\n",
+                  site, path, (unsigned long)now, (unsigned long)(now - dbg_last_connect_ms));
+    dbg_last_connect_ms = now;
+}
+#endif
+
 // ── Required library callbacks (must exist even if unused) ────────────────────
+#if AUDIO_DEBUG_TIMING
+void audio_info(const char *info)      { Serial.printf("[audio_info] %s\n", info); }
+#else
 void audio_info(const char *)          {}
+#endif
 void audio_id3data(const char *)       {}
 void audio_eof_mp3(const char *)       { playing = false; }
 void audio_eof_wav(const char *)       { playing = false; }
@@ -138,7 +152,10 @@ bool audio_manager_init() {
     // ── Init SPI exactly as working project: global SPI, CS=-1 ───────────────
     SPI.begin(PIN_TFT_SCK, PIN_SD_MISO, PIN_TFT_MOSI, -1);
 
-    if (!SD.begin(PIN_SD_CS, SPI, 400000)) {
+    // 400kHz was only ever needed for the initial card handshake; SD.begin()'s
+    // frequency arg is reused for every subsequent read, so leaving it that low
+    // made buffer-refill reads block audio.loop() for ~100ms at a time (measured).
+    if (!SD.begin(PIN_SD_CS, SPI, 20000000)) {
         Serial.println("Audio: SD card not found");
         sd_ok = false;
     } else {
@@ -154,6 +171,31 @@ bool audio_manager_init() {
     return sd_ok;
 }
 
+#if AUDIO_DEBUG_TIMING
+void audio_manager_loop() {
+    static uint32_t dbg_last_call_ms = 0;
+    const uint32_t call_start_us = micros();
+    const uint32_t gap_ms = millis() - dbg_last_call_ms;
+    if (gap_ms > 10) {
+        Serial.printf("[audio_loop] gap_since_prev=%lums\n", (unsigned long)gap_ms);
+    }
+
+    audio.loop();
+
+    const uint32_t duration_us = micros() - call_start_us;
+    if (duration_us > 5000) {
+        Serial.printf("[audio_loop] audio.loop() took %luus\n", (unsigned long)duration_us);
+    }
+    dbg_last_call_ms = millis();
+
+    if (loop_enabled && sd_ok && !playing && loop_path[0] != '\0') {
+        debug_log_connect("loop_restart", loop_path);
+        audio.connecttoFS(SD, loop_path);
+        audio.setVolume(pct_to_lib(volume_pct));
+        playing = true;
+    }
+}
+#else
 void audio_manager_loop() {
     audio.loop();
 
@@ -163,6 +205,7 @@ void audio_manager_loop() {
         playing = true;
     }
 }
+#endif
 
 void audio_manager_play(const char *path) {
     loop_enabled = false;
@@ -174,6 +217,9 @@ void audio_manager_play(const char *path) {
         audio_manager_play_beep();
         return;
     }
+#if AUDIO_DEBUG_TIMING
+    debug_log_connect("play", path);
+#endif
     audio.connecttoFS(SD, path);
     audio.setVolume(pct_to_lib(volume_pct));
     playing = true;
@@ -205,6 +251,9 @@ void audio_manager_play_loop(const char *path) {
         return;
     }
 
+#if AUDIO_DEBUG_TIMING
+    debug_log_connect("play_loop", loop_path);
+#endif
     audio.connecttoFS(SD, loop_path);
     audio.setVolume(pct_to_lib(volume_pct));
     playing = true;
@@ -218,6 +267,9 @@ void audio_manager_play_beep() {
     preview_path[0] = '\0';
 
     if (sd_ok) {
+#if AUDIO_DEBUG_TIMING
+        debug_log_connect("play_beep", "/beeps/1000hz.wav");
+#endif
         audio.connecttoFS(SD, "/beeps/1000hz.wav");
         audio.setVolume(pct_to_lib(volume_pct));
         playing = true;
@@ -319,6 +371,9 @@ void audio_manager_toggle_preview(const char *path) {
 
     if (!sd_ok || !SD.exists(path)) return;
 
+#if AUDIO_DEBUG_TIMING
+    debug_log_connect("toggle_preview", path);
+#endif
     audio.connecttoFS(SD, path);
     audio.setVolume(pct_to_lib(volume_pct));
     playing = true;
