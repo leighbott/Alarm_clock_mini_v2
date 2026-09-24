@@ -3,6 +3,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// ── Home screen element customization ─────────────────────────────────────────
+static constexpr uint8_t UI_HOME_ELEMENT_COUNT = 10;
+
+struct UiElementConfig {
+    uint8_t font_size;   // pt size (14/16/20/24/32/48); 0 = not customized, use built-in default
+    int16_t x;
+    int16_t y;
+};
+
 // ── All persistent settings ───────────────────────────────────────────────────
 struct AppSettings {
     // Alarm
@@ -36,6 +45,9 @@ struct AppSettings {
     uint8_t  led1_sat;               // 0–100 %
     uint16_t led2_hue;               // 0–360 degrees
     uint8_t  led2_sat;               // 0–100 %
+
+    // Home page customization
+    UiElementConfig home_elements[UI_HOME_ELEMENT_COUNT];
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -48,3 +60,4 @@ void              storage_manager_save_alarm();        // alarm fields only
 void              storage_manager_load_display();      // display fields only
 void              storage_manager_save_display();      // display fields only
 void              storage_manager_save_leds();         // LED fields only
+void              storage_manager_save_home_element(uint8_t index); // one home-page element

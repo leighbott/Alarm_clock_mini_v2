@@ -12,8 +12,9 @@ static constexpr int DISP_H = 142;
 static constexpr int HEADER_H = 34;
 static constexpr int CONTENT_Y = 36;
 static constexpr int CONTENT_H = DISP_H - CONTENT_Y;
-static constexpr int TILE_GAP = 10;
-static constexpr int TILE_W = (DISP_W - (3 * TILE_GAP)) / 2;
+static constexpr int TILE_GAP = 8;
+static constexpr int TILE_COUNT = 3;
+static constexpr int TILE_W = (DISP_W - ((TILE_COUNT + 1) * TILE_GAP)) / TILE_COUNT;
 static constexpr int TILE_H = CONTENT_H - (2 * TILE_GAP);
 static constexpr int SWATCH_SIZE = 28;
 
@@ -25,7 +26,7 @@ static lv_timer_t *g_pending_action_timer = nullptr;
 static UiOtherAction g_pending_action = UiOtherAction::NONE;
 static UiOtherAction g_deferred_action = UiOtherAction::NONE;
 
-static lv_obj_t *g_tiles[2] = {nullptr, nullptr};
+static lv_obj_t *g_tiles[TILE_COUNT] = {nullptr, nullptr, nullptr};
 static lv_obj_t *g_swatches[2] = {nullptr, nullptr};
 static uint8_t g_selected_tile = 0;
 
@@ -175,8 +176,33 @@ static lv_obj_t *create_led_tile(lv_obj_t *parent, int x, int y, const char *tex
     return tile;
 }
 
+static lv_obj_t *create_plain_tile(lv_obj_t *parent, int x, int y, const char *text) {
+    lv_obj_t *tile = lv_obj_create(parent);
+    lv_obj_set_size(tile, TILE_W, TILE_H);
+    lv_obj_set_pos(tile, x, y);
+    lv_obj_set_style_bg_color(tile, lv_color_make(0x2A, 0x2A, 0x2A), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(tile, 8, LV_PART_MAIN);
+    lv_obj_set_style_border_width(tile, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(tile, 0, LV_PART_MAIN);
+    lv_obj_set_scrollable(tile, false);
+
+    lv_obj_set_style_border_width(tile, 3, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_color(tile, lv_color_white(), LV_PART_MAIN | LV_STATE_FOCUSED);
+
+    lv_obj_t *label = lv_label_create(tile);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_center(label);
+    lv_obj_set_clickable(label, false);
+    lv_obj_set_click_focusable(label, false);
+
+    return tile;
+}
+
 static void update_tile_focus() {
-    for (uint8_t i = 0; i < 2; ++i) {
+    for (uint8_t i = 0; i < TILE_COUNT; ++i) {
         if (!g_tiles[i]) continue;
         if (i == g_selected_tile) lv_obj_add_state(g_tiles[i], LV_STATE_FOCUSED);
         else lv_obj_clear_state(g_tiles[i], LV_STATE_FOCUSED);
@@ -207,10 +233,12 @@ void ui_other_init() {
 
     const int x0 = TILE_GAP;
     const int x1 = TILE_GAP + TILE_W + TILE_GAP;
+    const int x2 = TILE_GAP + 2 * (TILE_W + TILE_GAP);
     const int y0 = TILE_GAP;
 
     g_tiles[0] = create_led_tile(content, x0, y0, "Front LED", &g_swatches[0]);
     g_tiles[1] = create_led_tile(content, x1, y0, "Rear LED", &g_swatches[1]);
+    g_tiles[2] = create_plain_tile(content, x2, y0, "Home Page");
 
     g_selected_tile = 0;
     update_tile_focus();
@@ -290,12 +318,20 @@ UiOtherAction ui_other_handle_inputs(int32_t enc1_delta,
     }
 
     if (enc1_delta != 0) {
-        g_selected_tile = (g_selected_tile == 0) ? 1 : 0;
+        const int8_t direction = (enc1_delta > 0) ? 1 : -1;
+        int16_t next = (int16_t)g_selected_tile + direction;
+        if (next < 0) next = TILE_COUNT - 1;
+        if (next >= TILE_COUNT) next = 0;
+        g_selected_tile = (uint8_t)next;
         update_tile_focus();
     }
 
     if (enc2_delta != 0) {
-        return (g_selected_tile == 0) ? UiOtherAction::ENTER_LED1 : UiOtherAction::ENTER_LED2;
+        switch (g_selected_tile) {
+            case 0: return UiOtherAction::ENTER_LED1;
+            case 1: return UiOtherAction::ENTER_LED2;
+            default: return UiOtherAction::ENTER_HOME_PAGE;
+        }
     }
 
     return UiOtherAction::NONE;

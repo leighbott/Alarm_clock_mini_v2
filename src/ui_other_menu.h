@@ -8,6 +8,7 @@ enum class UiOtherAction {
     ACCEPT,
     ENTER_LED1,
     ENTER_LED2,
+    ENTER_HOME_PAGE,
 };
 
 void ui_other_init();

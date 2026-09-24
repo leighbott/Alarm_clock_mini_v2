@@ -87,6 +87,30 @@ static void save_leds() {
     prefs.putUChar ("led2_sat",  settings.led2_sat);
 }
 
+static void load_home_page() {
+    char key[16];
+    for (uint8_t i = 0; i < UI_HOME_ELEMENT_COUNT; ++i) {
+        snprintf(key, sizeof(key), "hm_e%u_fs", (unsigned)i);
+        settings.home_elements[i].font_size = prefs.getUChar(key, 0);
+        snprintf(key, sizeof(key), "hm_e%u_x", (unsigned)i);
+        settings.home_elements[i].x = prefs.getShort(key, -1);
+        snprintf(key, sizeof(key), "hm_e%u_y", (unsigned)i);
+        settings.home_elements[i].y = prefs.getShort(key, -1);
+    }
+}
+
+void storage_manager_save_home_element(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT) return;
+    char key[16];
+    const UiElementConfig &e = settings.home_elements[index];
+    snprintf(key, sizeof(key), "hm_e%u_fs", (unsigned)index);
+    prefs.putUChar(key, e.font_size);
+    snprintf(key, sizeof(key), "hm_e%u_x", (unsigned)index);
+    prefs.putShort(key, e.x);
+    snprintf(key, sizeof(key), "hm_e%u_y", (unsigned)index);
+    prefs.putShort(key, e.y);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 void storage_manager_init() {
     // Apply defaults by direct field assignment (avoids C++ constexpr char[] issues)
@@ -117,12 +141,18 @@ void storage_manager_init() {
     settings.led1_sat             = 100;
     settings.led2_hue             = 0;
     settings.led2_sat             = 100;
+    for (uint8_t i = 0; i < UI_HOME_ELEMENT_COUNT; ++i) {
+        settings.home_elements[i].font_size = 0;
+        settings.home_elements[i].x = -1;
+        settings.home_elements[i].y = -1;
+    }
 
     prefs.begin(NS, false);              // read-write mode
 
     load_alarm();
     storage_manager_load_display();
     load_leds();
+    load_home_page();
 
     Serial.println("Storage: settings loaded from NVS");
 }

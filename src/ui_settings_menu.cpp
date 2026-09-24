@@ -4,6 +4,7 @@
 #include "ui_other_menu.h"
 #include "ui_led_color_menu.h"
 #include "ui_quick_alarm_menu.h"
+#include "ui_home_page_menu.h"
 #include "ui_time_date.h"
 #include "manager_led.h"
 
@@ -60,6 +61,7 @@ static void route_to_main_settings();
 static void route_to_other();
 static void route_to_led_color(LedStrip strip);
 static void route_to_quick_alarm();
+static void route_to_home_page();
 
 static void hide_header_flash() {
     if (g_header_cancel_bg) lv_obj_set_style_bg_opa(g_header_cancel_bg, LV_OPA_TRANSP, 0);
@@ -344,6 +346,12 @@ static void route_to_quick_alarm() {
     lv_screen_load(g_quick_alarm_screen);
 }
 
+static void route_to_home_page() {
+    ui_home_page_menu_on_enter();
+    g_state = UiNavState::SETTINGS_HOME_PAGE;
+    lv_screen_load(ui_home_page_menu_get_screen());
+}
+
 static void route_to_child(uint8_t idx) {
     if (idx >= 4) return;
 
@@ -393,6 +401,7 @@ void settings_menu_init(lv_obj_t *home_screen) {
     g_led_color_screen = ui_led_color_menu_get_screen();
     ui_quick_alarm_init();
     g_quick_alarm_screen = ui_quick_alarm_get_screen();
+    ui_home_page_menu_init();
     g_children[1].screen = ui_alarm_get_screen();
     g_children[0].screen = ui_time_date_get_screen();
     g_children[2].screen = ui_other_get_screen();
@@ -526,6 +535,8 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 route_to_led_color(LED_STRIP_FRONT);
             } else if (action == UiOtherAction::ENTER_LED2) {
                 route_to_led_color(LED_STRIP_BACK);
+            } else if (action == UiOtherAction::ENTER_HOME_PAGE) {
+                route_to_home_page();
             }
             return;
         }
@@ -550,6 +561,18 @@ void settings_menu_handle_inputs(int32_t enc1_delta,
                 enc2_pressed);
             if (action == UiQuickAlarmAction::CANCEL || action == UiQuickAlarmAction::ACCEPT) {
                 route_to_home();
+            }
+            return;
+        }
+
+        case UiNavState::SETTINGS_HOME_PAGE: {
+            const UiHomePageAction action = ui_home_page_menu_handle_inputs(
+                enc1_delta,
+                enc2_delta,
+                enc1_pressed,
+                enc2_pressed);
+            if (action == UiHomePageAction::CANCEL || action == UiHomePageAction::ACCEPT) {
+                route_to_other();
             }
             return;
         }

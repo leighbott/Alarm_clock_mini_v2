@@ -29,6 +29,27 @@ static lv_obj_t *main_screen  = nullptr;
 
 static bool colon_visible = true;
 
+// ── Customizable element registry (Home Page menu) ───────────────────────────
+static lv_obj_t   *g_elements[UI_HOME_ELEMENT_COUNT_MAIN]   = {nullptr};
+static const char  *g_element_names[UI_HOME_ELEMENT_COUNT_MAIN] = {
+    "Time", "AM/PM", "Seconds", "Date", "Alarm",
+    "Time Until", "Temperature", "Humidity", "Brightness", "LDR Raw",
+};
+static uint8_t g_element_font_size[UI_HOME_ELEMENT_COUNT_MAIN] = {0};
+
+static const lv_font_t *font_for_size(uint8_t size) {
+    switch (size) {
+        case 14: return &lv_font_montserrat_14;
+        case 16: return &lv_font_montserrat_16;
+        case 20: return &lv_font_montserrat_20;
+        case 24: return &lv_font_montserrat_24;
+        case 32: return &lv_font_montserrat_32;
+        case 48: return &lv_font_montserrat_48;
+        default: return &lv_font_montserrat_16;
+    }
+}
+
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 static const char *ordinal(uint8_t d) {
     if (d >= 11 && d <= 13) return "th";
@@ -95,14 +116,6 @@ void ui_main_screen_init() {
     lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_align(lbl_date, LV_ALIGN_TOP_LEFT, 10, 54);
 
-    lv_obj_t *line = lv_obj_create(scr);
-    lv_obj_set_size(line, 276, 1);
-    lv_obj_set_style_bg_color(line, COL_DIM, 0);
-    lv_obj_set_style_bg_opa(line, LV_OPA_30, 0);
-    lv_obj_set_style_border_width(line, 0, 0);
-    lv_obj_set_style_pad_all(line, 0, 0);
-    lv_obj_align(line, LV_ALIGN_TOP_LEFT, 10, 70);
-
     lbl_alarm = lv_label_create(scr);
     lv_label_set_text(lbl_alarm, "Alarm  OFF");
     lv_obj_set_style_text_font(lbl_alarm, &lv_font_montserrat_16, 0);
@@ -118,14 +131,6 @@ void ui_main_screen_init() {
     lv_obj_set_width(lbl_until, 276);
     lv_obj_set_style_text_align(lbl_until, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_align(lbl_until, LV_ALIGN_TOP_LEFT, 10, 96);
-
-    lv_obj_t *line2 = lv_obj_create(scr);
-    lv_obj_set_size(line2, 410, 1);
-    lv_obj_set_style_bg_color(line2, COL_DIM, 0);
-    lv_obj_set_style_bg_opa(line2, LV_OPA_30, 0);
-    lv_obj_set_style_border_width(line2, 0, 0);
-    lv_obj_set_style_pad_all(line2, 0, 0);
-    lv_obj_align(line2, LV_ALIGN_TOP_MID, 0, 116);
 
     lbl_temp = lv_label_create(scr);
     lv_label_set_text(lbl_temp, "--.-\xc2\xb0\x43");  // "--.-°C"
@@ -150,6 +155,29 @@ void ui_main_screen_init() {
     lv_obj_set_style_text_font(lbl_ldr_raw, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_ldr_raw, COL_DIM, 0);
     lv_obj_align(lbl_ldr_raw, LV_ALIGN_BOTTOM_RIGHT, -10, -4);
+
+    // Register elements and snapshot their resolved layout as hardcoded x/y — all
+    // future moves use lv_obj_set_pos() directly instead of relative alignment.
+    g_elements[0] = lbl_time;      g_element_font_size[0] = 48;
+    g_elements[1] = lbl_ampm;      g_element_font_size[1] = 16;
+    g_elements[2] = lbl_secs;      g_element_font_size[2] = 16;
+    g_elements[3] = lbl_date;      g_element_font_size[3] = 14;
+    g_elements[4] = lbl_alarm;     g_element_font_size[4] = 16;
+    g_elements[5] = lbl_until;     g_element_font_size[5] = 14;
+    g_elements[6] = lbl_temp;      g_element_font_size[6] = 20;
+    g_elements[7] = lbl_hum;       g_element_font_size[7] = 20;
+    g_elements[8] = lbl_brightness; g_element_font_size[8] = 14;
+    g_elements[9] = lbl_ldr_raw;   g_element_font_size[9] = 14;
+
+    for (uint8_t i = 0; i < UI_HOME_ELEMENT_COUNT_MAIN; ++i) {
+        lv_obj_t *obj = g_elements[i];
+        if (!obj) continue;
+        int16_t x = (int16_t)lv_obj_get_x(obj);
+        int16_t y = (int16_t)lv_obj_get_y(obj);
+        lv_obj_set_pos(obj, x, y);
+    }
+
+    ui_main_screen_apply_customization();
 }
 
 // ── Update (call every second) ────────────────────────────────────────────────
@@ -244,3 +272,51 @@ void ui_main_screen_update() {
 lv_obj_t *ui_main_screen_get_screen() {
     return main_screen;
 }
+
+lv_obj_t *ui_main_screen_get_element(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) return nullptr;
+    return g_elements[index];
+}
+
+const char *ui_main_screen_get_element_name(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) return "";
+    return g_element_names[index];
+}
+
+uint8_t ui_main_screen_get_element_font_size(uint8_t index) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN) return 0;
+    return g_element_font_size[index];
+}
+
+void ui_main_screen_set_element_font_size(uint8_t index, uint8_t size) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    g_element_font_size[index] = size;
+    lv_obj_set_style_text_font(g_elements[index], font_for_size(size), 0);
+}
+
+void ui_main_screen_get_element_pos(uint8_t index, int16_t *x, int16_t *y) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) {
+        if (x) *x = 0;
+        if (y) *y = 0;
+        return;
+    }
+    if (x) *x = (int16_t)lv_obj_get_x(g_elements[index]);
+    if (y) *y = (int16_t)lv_obj_get_y(g_elements[index]);
+}
+
+void ui_main_screen_set_element_pos(uint8_t index, int16_t x, int16_t y) {
+    if (index >= UI_HOME_ELEMENT_COUNT_MAIN || !g_elements[index]) return;
+    lv_obj_set_pos(g_elements[index], x, y);
+}
+
+void ui_main_screen_apply_customization() {
+    AppSettings &s = storage_manager_get();
+    for (uint8_t i = 0; i < UI_HOME_ELEMENT_COUNT_MAIN; ++i) {
+        if (!g_elements[i]) continue;
+        const UiElementConfig &e = s.home_elements[i];
+        if (e.font_size == 0 || e.x < 0 || e.y < 0) continue;
+        ui_main_screen_set_element_font_size(i, e.font_size);
+        ui_main_screen_set_element_pos(i, e.x, e.y);
+    }
+}
+
