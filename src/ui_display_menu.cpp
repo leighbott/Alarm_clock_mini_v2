@@ -125,7 +125,7 @@ static void clamp_state() {
     if (g_state.boost_brightness_percent > 100) g_state.boost_brightness_percent = 100;
     if (g_state.ldr_max_raw > 4095) g_state.ldr_max_raw = 4095;
     if (g_state.boost_duration_ms < 500) g_state.boost_duration_ms = 500;
-    if (g_state.boost_duration_ms > 5000) g_state.boost_duration_ms = 5000;
+    if (g_state.boost_duration_ms > 10000) g_state.boost_duration_ms = 10000;
 
     // Boost may never sit below manual brightness; it follows manual upward if needed.
     if (g_state.boost_brightness_percent < g_state.manual_brightness_percent) {
@@ -267,7 +267,7 @@ static void update_widgets() {
                     std::snprintf(value, sizeof(value), "%u", (unsigned)g_state.ldr_max_raw);
                     break;
                 case UiDisplayField::BOOST_DURATION:
-                    std::snprintf(value, sizeof(value), "%ums", (unsigned)g_state.boost_duration_ms);
+                    std::snprintf(value, sizeof(value), "%us", (unsigned)(g_state.boost_duration_ms / 1000U));
                     break;
                 default:
                     value[0] = '\0';
@@ -359,7 +359,7 @@ static void adjust_selected_field(int32_t delta) {
             int32_t next = (int32_t)g_state.boost_duration_ms + ((delta > 0) ? (int32_t)(step * magnitude)
                                                                               : -(int32_t)(step * magnitude));
             if (next < 500) next = 500;
-            if (next > 5000) next = 5000;
+            if (next > 10000) next = 10000;
             g_state.boost_duration_ms = (uint16_t)next;
             break;
         }
