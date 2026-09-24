@@ -4,6 +4,7 @@
 #include "manager_led.h"
 #include "manager_storage.h"
 
+#include <Arduino.h>
 #include <cstdio>
 #include <string.h>
 
@@ -135,6 +136,12 @@ enum class ModalCloseAction : uint8_t {
 };
 
 static ModalCloseAction g_modal_close_action = ModalCloseAction::NONE;
+
+// Throttle render_fields() to prevent excessive arc redraws during live adjustments.
+// Must exceed the render's own cost (~50ms observed) or the loop period never
+// advances far enough between checks for any iteration to actually be skipped.
+static uint32_t g_last_render_time_us = 0;
+static constexpr uint32_t RENDER_THROTTLE_US = 150000;  // 150ms throttle
 
 static void close_repeat_window(bool apply_changes);
 static void close_sound_window(bool apply_changes);
@@ -1140,6 +1147,7 @@ static void close_repeat_window(bool apply_changes) {
     g_repeat_open = false;
     lv_screen_load(g_screen);
     render_fields();
+    g_last_render_time_us = micros();  // Reset throttle on major screen change
 }
 
 static void open_sound_window() {
@@ -1193,6 +1201,7 @@ static void close_sound_window(bool apply_changes) {
     g_sound_state.open = false;
     lv_screen_load(g_screen);
     render_fields();
+    g_last_render_time_us = micros();  // Reset throttle on major screen change
 }
 
 static void build_alarm_screen() {
@@ -1263,6 +1272,7 @@ void ui_alarm_on_enter() {
     audio_manager_stop_preview();
     hide_header_flash();
     render_fields();
+    g_last_render_time_us = micros();  // Reset throttle on screen enter
 }
 
 UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
@@ -1425,6 +1435,35 @@ UiAlarmAction ui_alarm_handle_inputs(int32_t enc1_delta,
         return UiAlarmAction::NONE;
     }
 
-    render_fields();
+    // Throttle render_fields() during live adjustments to prevent audio starvation.
+    // Force immediate render on focus changes (enc1_delta), throttle value changes.
+    bool should_render = false;
+    if (enc1_delta != 0) {
+        // Focus changed - render immediately
+        should_render = true;
+    } else {
+        // Check throttle for other updates
+        const uint32_t now_us = micros();
+        if ((now_us - g_last_render_time_us) >= RENDER_THROTTLE_US) {
+            should_render = true;
+        }
+    }
+
+    if (should_render) {
+#if AUDIO_DEBUG_TIMING
+        {
+            const uint32_t start_us = micros();
+            render_fields();
+            const uint32_t duration_us = micros() - start_us;
+            if (duration_us > 5000) {
+                Serial.printf("[render_fields] took %luus\n", (unsigned long)duration_us);
+            }
+            g_last_render_time_us = micros();
+        }
+#else
+        render_fields();
+        g_last_render_time_us = micros();
+#endif
+    }
     return UiAlarmAction::NONE;
 }
