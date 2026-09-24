@@ -311,7 +311,7 @@ void ui_main_screen_update() {
         DateTime next_alarm;
         bool is_snoozed = false;
         if (alarm_manager_get_next_alarm_time(now, &next_alarm, &is_snoozed)) {
-            snprintf(buf, sizeof(buf), "Alarm  %02d:%02d", next_alarm.hour(), next_alarm.minute());
+            snprintf(buf, sizeof(buf), "Alarm %02d:%02d", next_alarm.hour(), next_alarm.minute());
             lv_label_set_text(lbl_alarm, buf);
             if (!g_alarm_color_customized) lv_obj_set_style_text_color(lbl_alarm, COL_ACCENT, 0);
 

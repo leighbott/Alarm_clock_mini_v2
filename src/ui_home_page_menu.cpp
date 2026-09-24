@@ -441,7 +441,11 @@ UiHomePageAction ui_home_page_menu_handle_inputs(int32_t enc1_delta,
                 update_row_focus();
             }
             if (enc2_delta != 0 && g_selected_index < UI_HOME_ELEMENT_COUNT_MAIN) {
-                ui_main_screen_set_element_visible(element_index_for_row(g_selected_index), enc2_delta > 0);
+                const uint8_t element_index = element_index_for_row(g_selected_index);
+                const bool visible = enc2_delta > 0;
+                ui_main_screen_set_element_visible(element_index, visible);
+                storage_manager_get().home_elements[element_index].visible = visible ? 1 : 0;
+                storage_manager_save_home_element(element_index);
                 update_row_text(g_selected_index);
             }
             return UiHomePageAction::NONE;
